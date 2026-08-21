@@ -18,17 +18,22 @@ make build
 |---------|---------|
 | `make fmt` | `gofmt` |
 | `make vet` | `go vet ./...` |
-| `make test` | Unit tests |
+| `make test` | Unit tests (also writes doctor/catalog dumps under `testdata/artifacts/`) |
 | `make test-race` | Race detector |
-| `make check` | tidy → fmt → vet → race |
+| `make cover` | Coverage HTML + **70%** gate on `./internal/...` → `testdata/artifacts/` |
+| `make bench` | Benchmarks → `testdata/artifacts/bench.txt` |
+| `make check` | tidy → fmt → vet → race → cover |
 | `make build` | `bin/quikaitools` |
+| `make clean` | Remove `bin/`, `dist/`, `testdata/artifacts/` |
+
+Generated coverage, benches, and CLI dumps land in `testdata/artifacts/` (gitignored). See [testdata/README.md](testdata/README.md). Never commit those files.
 
 ## Before you open a PR
 
 - [ ] `make check` passes
 - [ ] New catalog models have `id`, `task`, and machine status
 - [ ] Lab/compose/gap docs updated if you change what `doctor` binds
-- [ ] No secrets, `.env`, or local model weights committed
+- [ ] No secrets, `.env`, local model weights, or `testdata/artifacts/` committed
 
 ## Design priorities
 

@@ -57,3 +57,24 @@ func TestDetectGFX(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestProbeHelpers(t *testing.T) {
+	if firstLine("") != "" || firstLine("a\nb") != "a" {
+		t.Fatalf("firstLine")
+	}
+	if fileExists("no-such-quikaitools-path") {
+		t.Fatal("missing file exists")
+	}
+	p, err := Detect(KindHalo, func() HostInfo {
+		return HostInfo{GOOS: "linux", HasKFD: true, ROCmGFX: "gfx1151", NvidiaName: ""}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.String() != "AMD Strix Halo (gfx1151) (halo)" {
+		t.Fatalf("string = %s", p.String())
+	}
+	if p.HardwareHint == "" || p.CatalogMachine() != "halo" {
+		t.Fatalf("hint=%q machine=%s", p.HardwareHint, p.CatalogMachine())
+	}
+}

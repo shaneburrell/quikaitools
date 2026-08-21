@@ -89,3 +89,13 @@ func TestLoadDirNestedModels(t *testing.T) {
 		t.Fatalf("got %+v", cat.Models)
 	}
 }
+
+func TestStatusOnDefault(t *testing.T) {
+	var m Model
+	if m.StatusOn("v100") != StatusUntested {
+		t.Fatalf("nil machines: %s", m.StatusOn("v100"))
+	}
+	if m.EngineOn("v100") != "" {
+		t.Fatal("nil engine")
+	}
+}

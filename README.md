@@ -148,9 +148,14 @@ make build
 | `make vet` | `go vet ./...` |
 | `make test` | Unit tests |
 | `make test-race` | Race detector |
+| `make cover` | Coverage HTML + **70%** gate → `testdata/artifacts/` |
+| `make bench` | Benchmarks → `testdata/artifacts/bench.txt` |
 | `make tidy` | `go mod tidy` |
-| `make check` | tidy → fmt → vet → race |
+| `make check` | tidy → fmt → vet → race → cover |
 | `make build` | `bin/quikaitools` |
+| `make clean` | Remove `bin/`, `dist/`, `testdata/artifacts/` |
+
+All generated coverage, benches, and CLI dumps go under **`testdata/artifacts/`** (gitignored). See [testdata/README.md](testdata/README.md).
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
 

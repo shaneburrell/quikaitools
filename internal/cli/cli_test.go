@@ -51,3 +51,15 @@ func TestUnknownCommand(t *testing.T) {
 		t.Fatalf("code=%d", code)
 	}
 }
+
+func TestDoctorHelpAndBadFlag(t *testing.T) {
+	var out, err bytes.Buffer
+	if code := Main([]string{"quikaitools", "doctor", "--help"}, &out, &err); code != 0 {
+		t.Fatalf("help code=%d", code)
+	}
+	out.Reset()
+	err.Reset()
+	if code := Main([]string{"quikaitools", "doctor", "--nope"}, &out, &err); code != 2 {
+		t.Fatalf("bad flag code=%d", code)
+	}
+}
