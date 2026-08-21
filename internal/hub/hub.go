@@ -49,29 +49,86 @@ func (c *Client) ModelDir(repo string) string {
 }
 
 // Pull downloads files into ModelDir(repo). Existing files are kept.
+// Missing optional files (HTTP 404) are skipped with a note when skip404 is true.
 func (c *Client) Pull(repo string, files []string) (string, error) {
-	if repo == "" {
-		return "", fmt.Errorf("hub: empty repo")
+	return c.PullOpts(repo, files, true)
+}
+
+// PullOpts is Pull with control over 404 skipping.
+func (c *Client) PullOpts(repo string, files []string, skip404 bool) (string, error) {
+	if err := ValidateRepo(repo); err != nil {
+		return "", err
 	}
 	if len(files) == 0 {
 		files = DefaultFiles
 	}
-	dir := c.ModelDir(repo)
+	dir, err := c.safeModelDir(repo)
+	if err != nil {
+		return "", err
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
+	got := 0
 	for _, name := range files {
 		dest := filepath.Join(dir, name)
+		if rel, err := filepath.Rel(dir, dest); err != nil || strings.HasPrefix(rel, "..") {
+			return dir, fmt.Errorf("hub: refused path %q", name)
+		}
 		if st, err := os.Stat(dest); err == nil && st.Size() > 0 {
+			got++
 			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+			return dir, err
 		}
 		url := fmt.Sprintf("%s/%s/resolve/main/%s", strings.TrimRight(c.Base, "/"), repo, name)
 		if err := c.download(url, dest); err != nil {
+			if skip404 && strings.Contains(err.Error(), "HTTP 404") {
+				continue
+			}
 			if name == "tokenizer_config.json" && strings.Contains(err.Error(), "HTTP 404") {
 				continue
 			}
 			return dir, fmt.Errorf("%s: %w", name, err)
 		}
+		got++
+	}
+	if got == 0 {
+		return dir, fmt.Errorf("hub: no files downloaded for %s", repo)
+	}
+	return dir, nil
+}
+
+// ValidateRepo accepts Hugging Face org/name only (no path traversal).
+func ValidateRepo(repo string) error {
+	if repo == "" {
+		return fmt.Errorf("hub: empty repo")
+	}
+	if strings.Contains(repo, "..") || strings.Contains(repo, `\`) || filepath.IsAbs(repo) {
+		return fmt.Errorf("hub: invalid repo %q", repo)
+	}
+	parts := strings.Split(repo, "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return fmt.Errorf("hub: repo must be org/name, got %q", repo)
+	}
+	for _, p := range parts {
+		for _, r := range p {
+			ok := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '.' || r == '-' || r == '_'
+			if !ok {
+				return fmt.Errorf("hub: invalid repo %q", repo)
+			}
+		}
+	}
+	return nil
+}
+
+func (c *Client) safeModelDir(repo string) (string, error) {
+	root := filepath.Clean(filepath.Join(c.Cache, "models"))
+	dir := filepath.Clean(filepath.Join(root, filepath.FromSlash(repo)))
+	rel, err := filepath.Rel(root, dir)
+	if err != nil || strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
+		return "", fmt.Errorf("hub: repo escapes cache: %q", repo)
 	}
 	return dir, nil
 }

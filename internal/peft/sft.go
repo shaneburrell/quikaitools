@@ -12,16 +12,37 @@ type blockTape struct {
 	attnCache                                      gpt2.AttnCache
 }
 
-// Step runs next-token SFT on tokens (length T). Returns mean CE loss.
+// StepLoss runs one microbatch and an Adam step (accum=1 convenience).
 func (m *Model) StepLoss(tokens []int) float32 {
 	if len(tokens) < 2 {
 		return 0
 	}
 	m.ZeroGrad()
-	loss, dx := m.forwardBackward(tokens)
-	_ = dx
+	loss, _ := m.forwardBackward(tokens)
 	m.Step()
 	return loss
+}
+
+// AccumulateLoss runs forward+backward, optionally zeroing grads first.
+// Call Step() after AccumSteps microbatches to apply Adam once.
+func (m *Model) AccumulateLoss(tokens []int, zeroFirst bool) float32 {
+	if len(tokens) < 2 {
+		return 0
+	}
+	if zeroFirst {
+		m.ZeroGrad()
+	}
+	loss, _ := m.forwardBackward(tokens)
+	return loss
+}
+
+// AdamSteps returns the Adam step counter from the first adapter (0 if none).
+func (m *Model) AdamSteps() int {
+	ads := m.adapters()
+	if len(ads) == 0 {
+		return 0
+	}
+	return ads[0].Step
 }
 
 func (m *Model) forwardBackward(tokens []int) (float32, []float32) {
@@ -46,7 +67,12 @@ func (m *Model) forwardBackward(tokens []int) (float32, []float32) {
 		tp := &tapes[li]
 		tp.x = append([]float32(nil), x...)
 		tp.ln1, tp.ln1Mean, tp.ln1Rstd = gpt2.LayerNorm(x, t, d, blk.LN1.W, blk.LN1.B, eps)
-		qkv := gpt2.MatMul(tp.ln1, t, d, blk.AttnW, d, 3*d)
+		var qkv []float32
+		if m.useQ {
+			qkv = m.qAttn[li].MatMul(tp.ln1, t)
+		} else {
+			qkv = gpt2.MatMul(tp.ln1, t, d, blk.AttnW, d, 3*d)
+		}
 		gpt2.AddBias(qkv, t, 3*d, blk.AttnB)
 		addVec(qkv, m.Attn[li].apply(tp.ln1, t, scale))
 		tp.qkv = qkv
@@ -59,7 +85,12 @@ func (m *Model) forwardBackward(tokens []int) (float32, []float32) {
 		addVec(x2, proj)
 		tp.x2 = x2
 		tp.ln2, tp.ln2Mean, tp.ln2Rstd = gpt2.LayerNorm(x2, t, d, blk.LN2.W, blk.LN2.B, eps)
-		fc := gpt2.MatMul(tp.ln2, t, d, blk.FcW, d, cfg.Inner())
+		var fc []float32
+		if m.useQ {
+			fc = m.qFC[li].MatMul(tp.ln2, t)
+		} else {
+			fc = gpt2.MatMul(tp.ln2, t, d, blk.FcW, d, cfg.Inner())
+		}
 		gpt2.AddBias(fc, t, cfg.Inner(), blk.FcB)
 		addVec(fc, m.FC[li].apply(tp.ln2, t, scale))
 		tp.fc = fc

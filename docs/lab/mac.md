@@ -14,7 +14,7 @@ Unified memory, Metal, CoreML / ANE. **XLA on Darwin is CPU-only.** There is no 
 ## Install
 
 1. Xcode CLT (Metal). Full Xcode if you compile CoreML models (`coremlcompiler`).
-2. Go 1.22+.
+2. Go 1.27+.
 3. llama.cpp with Metal (default on Apple Silicon when the toolchain is present).
 4. Confirm:
 
@@ -34,6 +34,31 @@ GoMLX `GOMLX_BACKEND=xla:cpu` works and leaves the GPU idle. That is expected.
 ## Doctor contract
 
 `GOOS=darwin` always resolves `auto` to `mac`, even if you also have a remote CUDA box. Use `--profile v100` when editing V100 docs on a laptop.
+
+```bash
+quikaitools doctor --strict
+# expects llama-cli (or QUIKAITOOLS_LLAMA) when exercising GGUF generate
+```
+
+## Mac e2e (MVP)
+
+Proven on this machine for the portable Go paths (Hub pull + LoRA/QLoRA + generate adapter + vision/audio preprocess). GGUF Metal needs a local `llama-cli`.
+
+```bash
+make build
+./bin/quikaitools pull tiny-random-gpt2
+./bin/quikaitools train lora \
+  --model ~/.cache/quikaitools/models/hf-internal-testing/tiny-random-gpt2 \
+  --data testdata/fixtures/stories.txt --steps 25 --rank 4 --accum 2 \
+  --out testdata/artifacts/adapter-lora --profile mac
+./bin/quikaitools generate --model ~/.cache/quikaitools/models/hf-internal-testing/tiny-random-gpt2 \
+  --adapter testdata/artifacts/adapter-lora --prompt "Once upon" --tokens 8
+./bin/quikaitools train qlora --model … --data … --steps 10 --out testdata/artifacts/adapter-qlora
+./bin/quikaitools embed --vision --model . --image testdata/fixtures/red.png
+./bin/quikaitools transcribe --model . --audio testdata/fixtures/tone.wav
+```
+
+Full checklist: [mvp-smoke.md](mvp-smoke.md).
 
 ## See also
 

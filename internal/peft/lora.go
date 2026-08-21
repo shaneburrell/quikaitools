@@ -37,10 +37,13 @@ type Adapter struct {
 
 // Model is a GPT-2 plus LoRA on every layer's c_attn and c_fc.
 type Model struct {
-	Base *gpt2.Model
-	Cfg  Config
-	Attn []*Adapter
-	FC   []*Adapter
+	Base  *gpt2.Model
+	Cfg   Config
+	Attn  []*Adapter
+	FC    []*Adapter
+	useQ  bool
+	qAttn []QuantLinear
+	qFC   []QuantLinear
 }
 
 // Wrap attaches zero-B LoRA (A small random) so the first step is identity.
@@ -188,8 +191,9 @@ func (m *Model) Save(dir string) error {
 	}
 	body, err := json.MarshalIndent(struct {
 		LoRA     Config `json:"lora"`
+		QLoRA    bool   `json:"qlora"`
 		Adapters []dump `json:"adapters"`
-	}{m.Cfg, list}, "", "  ")
+	}{m.Cfg, m.useQ, list}, "", "  ")
 	if err != nil {
 		return err
 	}

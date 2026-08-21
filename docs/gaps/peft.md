@@ -2,41 +2,34 @@
 
 **Job in PyTorch:** cheap fine-tune, SFT/DPO recipes, VRAM tricks.
 
-**Status:** v0.2 ships LoRA + SFT on a tiny GPT-2 (`quikaitools pull` + `train lora`). QLoRA and DPO are still later.
+**Status:** **MVP shipped.** LoRA + QLoRA + SFT on tiny GPT-2; `generate --adapter` closes train→use. DPO is next tag. Unsloth kernels stay out.
 
-## What we will write
+## Shipped CLI
 
-1. **LoRA** on GoMLX linear/attention (`internal/peft`): rank, alpha, dropout, freeze base, adapter-only save/load.
-2. **SFT trainer** (`internal/train`): chat template, loss, eval. TRL’s most-used loop.
-3. **QLoRA** next, because V100 is 16/32 GB. 4-bit base + FP16 LoRA. V100 first.
-4. **DPO** after SFT works. Later GRPO if anyone needs it.
+```bash
+quikaitools pull tiny-random-gpt2
+quikaitools train lora --model DIR --data FILE --accum 2 --resume DIR --profile mac
+quikaitools train qlora --model DIR --data FILE   # 4-bit frozen base + FP32 LoRA
+quikaitools generate --model DIR --adapter DIR --prompt "…" --tokens 16
+```
+
+- `internal/peft`: LoRA on `c_attn` / `c_fc`, save/load `adapter.json`, greedy generate.
+- `internal/peft` QLoRA: pack Conv1D to uint4, dequant in forward.
+- `internal/dist`: accum, checkpoint `meta.json`, `--profile` (FP16 flag for V100).
+- `--eval-every N` smoke-evaluates a forward pass.
 
 ## What we will not port
 
-**Unsloth** is fused NVIDIA kernels and graph rewrites. It will never be the portable backend. On V100 we meet the *need* (faster, lower-VRAM fine-tune) with LoRA/QLoRA + GoMLX XLA fusion.
-
-Full TRL (PPO, every reward trainer) is a later catalog, not the first two trainers.
+**Unsloth** is fused NVIDIA kernels. On V100 we meet the *need* (lower VRAM) with QLoRA, not Unsloth kernels.
 
 ## Per machine
 
-| Machine | Plan |
-|---------|------|
-| V100 | Live here. FP16. QLoRA on 16 GB. |
-| Mac | LoRA only if Relux/go-darwinml can train the base; otherwise CPU demo. |
-| Halo | Apply or merge adapters at **infer** (GGUF) before Halo GPU train exists. |
-
-## Lab command (tiny model)
-
-```bash
-quikaitools pull hf-internal-testing/tiny-random-gpt2
-quikaitools train lora \
-  --model ~/.cache/quikaitools/models/hf-internal-testing/tiny-random-gpt2 \
-  --data testdata/fixtures/stories.txt \
-  --steps 30 --rank 4 --out testdata/artifacts/adapter-lora
-```
-
-The Hub model is ~450KB (n_embd=32, 5 layers). Weights are random; this proves the Go LoRA loop, not story quality. Adapter JSON is written to `--out`.
+| Machine | MVP |
+|---------|-----|
+| Mac | Full train→generate path (e2e). |
+| V100 | Same Go trainer; FP16 job flag ready; Layer B GoMLX later. |
+| Halo | Same CPU LoRA path; apply adapters at infer (GGUF) preferred. |
 
 ## Success
 
-`quikaitools train lora` against the pulled tiny GPT-2 writes `adapter.json` and a finite loss curve.
+Finite loss, adapter saves, `generate --adapter` runs. See [../lab/mvp-smoke.md](../lab/mvp-smoke.md).

@@ -2,27 +2,27 @@
 
 **Job in PyTorch:** one trainer API, mixed precision, multi-GPU shard, ZeRO.
 
-**Status:** Layer A `backend.Profile` is the start of Accelerate-lite. `internal/dist` is not shipped in v0.1.
+**Status:** **MVP shipped** for Accelerate-lite. FSDP/DeepSpeed remain post-MVP.
 
-## Order
+## Shipped
 
-1. **Accelerate-lite** — `DeviceProfile`, engine bind, **FP16 on V100** (not BF16), gradient accumulation, checkpoint/resume. Every trainer uses this.
-2. **Cheap DeepSpeed-shaped extras** — activation checkpointing (GoMLX already has an API). Optimizer-state offload only if 16 GB forces it.
-3. **FSDP / ZeRO-3** — wrap [GoMLX Shardy](https://gomlx.github.io/docs/overview/) when the lab has **two or more V100s**. Halo and Mac stay single-device.
+`internal/dist.Job`:
 
-## What we will not write
+- `Profile` from `doctor` / `--profile`
+- `AccumSteps` (`train … --accum N`) — real gradient accumulation: microbatches share grads; Adam runs once per accum window
+- `CheckpointDir` + `meta.json` every N steps
+- `--resume DIR` loads `adapter.json` + step
+- `FP16` flag is set on V100/CUDA profiles but **compute stays FP32** in the portable Go trainer until Layer B; reserved for GoMLX/XLA later
+- `ShardModeNone` only
 
-DeepSpeed’s kernel tree, TorchElastic, multi-node fault recovery.
+```bash
+quikaitools train lora --model DIR --data FILE --accum 2 --resume DIR --profile mac
+```
 
-## Per machine
+## Not in MVP
 
-| Machine | Dist story |
-|---------|------------|
-| One V100 | Accum + checkpoint + FP16. No shard. |
-| Multi-V100 | Shardy / FSDP-lite later. |
-| Halo | One fat unified device. Sharding does not buy much. |
-| Mac | One device. |
+DeepSpeed ZeRO-3, TorchElastic, multi-V100 Shardy/FSDP.
 
 ## Success
 
-A trainer constructed with `dist.New(profile)` respects `MixedPrecision` from `doctor` and refuses BF16 on V100.
+Trainer constructed with `dist.NewJob(profile)` respects accum/checkpoint/resume. See [../lab/mvp-smoke.md](../lab/mvp-smoke.md).

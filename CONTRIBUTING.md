@@ -4,7 +4,7 @@ Thanks for helping. This project is a **guide first**, then missing tooling. Cor
 
 ## Development setup
 
-1. Install [Go](https://go.dev/dl/) 1.22+.
+1. Install [Go](https://go.dev/dl/) 1.27+.
 2. Clone and test:
 
 ```bash

@@ -99,3 +99,30 @@ func TestStatusOnDefault(t *testing.T) {
 		t.Fatal("nil engine")
 	}
 }
+
+func TestGetAndFilesAndSource(t *testing.T) {
+	cat := Catalog{Models: []Model{
+		{ID: "tiny-random-gpt2", Source: "https://huggingface.co/hf-internal-testing/tiny-random-gpt2", Formats: []string{"safetensors"}},
+		{ID: "clip", Source: "openai/clip-vit-base-patch32", Formats: []string{"onnx"}},
+	}}
+	m, ok := cat.Get("tiny-random-gpt2")
+	if !ok || RepoFromSource(m.Source) != "hf-internal-testing/tiny-random-gpt2" {
+		t.Fatalf("%+v", m)
+	}
+	if r := RepoFromSource("org/name"); r != "org/name" {
+		t.Fatalf("%s", r)
+	}
+	files := FilesForModel(m)
+	if len(files) < 3 {
+		t.Fatalf("safetensors files=%v", files)
+	}
+	onnx := FilesForModel(Model{Formats: []string{"onnx"}})
+	if len(onnx) < 2 {
+		t.Fatalf("onnx=%v", onnx)
+	}
+	gguf := FilesForModel(Model{Formats: []string{"gguf"}})
+	if len(gguf) == 0 {
+		t.Fatal("gguf")
+	}
+}
+

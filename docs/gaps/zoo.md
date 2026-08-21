@@ -2,41 +2,32 @@
 
 **Job in PyTorch:** `from_pretrained` across hundreds of architectures.
 
-**Status:** v0.1 ships the catalog format and a starter set. Breadth is **registry + conversion**, not a transformers fork.
+**Status:** **MVP shipped** for catalog + `pull <catalog-id>`. Breadth stays registry + conversion, not a transformers fork.
 
-## Format
+## Shipped
 
-One YAML file per model in [`catalog/models/`](../../catalog/models). Required fields: `id`, `task`. Machines use `works` | `cpu_only` | `untested` | `wont`.
-
-```yaml
-id: distilbert-sst2
-task: classify
-formats: [onnx]
-machines:
-  v100: works
-  halo: cpu_only
-  mac: works
-engine:
-  v100: hugot-ort-cuda
-  halo: hugot-go
-  mac: hugot-coreml
+```bash
+quikaitools catalog [--task] [--machine]
+quikaitools pull tiny-random-gpt2          # resolves YAML source
+quikaitools pull hf-internal-testing/…   # raw Hub id still works
 ```
 
-Non-V100 NVIDIA cards reuse the `v100` column (`backend.Profile.CatalogMachine`).
+Starter zoo (Mac-runnable paths):
 
-## How breadth grows
+| ID | Role |
+|----|------|
+| `tiny-random-gpt2` | train / generate LoRA |
+| `distilbert-sst2` / `nomic-embed-text` | ONNX embed targets |
+| `gemma3-270m-it` | small GGUF/ONNX generate |
+| `whisper-small` | transcribe |
+| `clip-vit-base-patch32` | vision-embed |
 
-1. Every model that already runs in Hugot, a GoMLX demo, or llama.cpp gets an entry.
-2. HF → ONNX (Optimum) and HF → GGUF are **documented conversion boundaries**. Runtime stays Go.
-3. New architectures land upstream (GoMLX/Hugot) or as a thin GoMLX port — then we catalog them.
+After Mac e2e, `mac: works` on the preprocess/CLI paths. Halo/V100 stay `untested` until [mvp-smoke.md](../lab/mvp-smoke.md) is filled.
 
 ## Conversion boundary
 
-We will not pretend Python disappeared for export. The guide will keep a short, pinned recipe (Optimum / llama.cpp convert) so the lab does that **once** per model. Serving and train loops stay in this repo.
+HF → ONNX / GGUF stays a documented export step. Runtime stays Go.
 
-## CLI
+## Success
 
-```bash
-quikaitools catalog
-quikaitools catalog --task generate --machine halo
-```
+`pull <id>` resolves `source` from YAML; catalog status columns match the smoke matrix.

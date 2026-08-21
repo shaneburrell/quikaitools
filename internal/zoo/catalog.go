@@ -170,3 +170,70 @@ func (m Model) EngineOn(machine string) string {
 	}
 	return m.Engine[machine]
 }
+
+// Get returns the model with id, or false.
+func (c Catalog) Get(id string) (Model, bool) {
+	id = strings.TrimSpace(id)
+	for _, m := range c.Models {
+		if m.ID == id {
+			return m, true
+		}
+	}
+	return Model{}, false
+}
+
+// RepoFromSource extracts org/name from a Hugging Face URL or bare repo id.
+func RepoFromSource(source string) string {
+	source = strings.TrimSpace(source)
+	if source == "" {
+		return ""
+	}
+	const prefix = "https://huggingface.co/"
+	if strings.HasPrefix(source, prefix) {
+		rest := strings.TrimPrefix(source, prefix)
+		parts := strings.Split(rest, "/")
+		if len(parts) >= 2 {
+			return parts[0] + "/" + parts[1]
+		}
+	}
+	if strings.Count(source, "/") == 1 && !strings.Contains(source, "://") {
+		return source
+	}
+	return source
+}
+
+// FilesForModel picks Hub files to download based on formats.
+func FilesForModel(m Model) []string {
+	fmts := map[string]bool{}
+	for _, f := range m.Formats {
+		fmts[strings.ToLower(f)] = true
+	}
+	var files []string
+	seen := map[string]bool{}
+	add := func(name string) {
+		if !seen[name] {
+			seen[name] = true
+			files = append(files, name)
+		}
+	}
+	if fmts["safetensors"] {
+		for _, f := range []string{"config.json", "model.safetensors", "vocab.json", "merges.txt", "tokenizer_config.json"} {
+			add(f)
+		}
+	}
+	if fmts["onnx"] {
+		add("config.json")
+		add("tokenizer.json")
+		add("tokenizer_config.json")
+		add("vocab.txt")
+		add("onnx/model.onnx")
+		add("model.onnx")
+	}
+	if fmts["gguf"] {
+		add("README.md")
+	}
+	if len(files) == 0 {
+		return nil // hub default
+	}
+	return files
+}

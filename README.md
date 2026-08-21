@@ -9,12 +9,19 @@
 QuikAITools is not another tensor core and not a Python wrapper. It is a **public map** of maintained Go ML projects, a **device profile** that picks the fast engine on each lab machine, and the place we implement the gaps PyTorch still owns: LoRA/TRL-lite, a curated model zoo, vision/audio slices, Accelerate-lite, and a single backend API.
 
 ```bash
-quikaitools doctor
+quikaitools doctor [--strict]
 quikaitools catalog --machine halo --task generate
-quikaitools pull                          # hf-internal-testing/tiny-random-gpt2
+quikaitools pull tiny-random-gpt2
 quikaitools train lora --model ~/.cache/quikaitools/models/hf-internal-testing/tiny-random-gpt2 \
-  --data testdata/fixtures/stories.txt --steps 30 --rank 4
+  --data testdata/fixtures/stories.txt --steps 30 --rank 4 --accum 2 --profile mac
+quikaitools generate --model … --adapter testdata/artifacts/adapter-lora --prompt "Once"
+quikaitools train qlora --model … --data … --steps 20
+quikaitools embed --model … --text "hello"
+quikaitools embed --vision --model … --image testdata/fixtures/red.png
+quikaitools transcribe --model … --audio testdata/fixtures/tone.wav
 ```
+
+Smoke checklist: [docs/lab/mvp-smoke.md](docs/lab/mvp-smoke.md) (Mac filled; Halo/V100 when those boxes are on).
 
 ## Why QuikAITools?
 
@@ -22,11 +29,11 @@ quikaitools train lora --model ~/.cache/quikaitools/models/hf-internal-testing/t
 |------------------------|---------------------|
 | “Which Go project is actually maintained?” | A living compose guide: GoMLX, Hugot, llama.cpp — not Gorgonia or libtorch |
 | Three machines, three stacks | One `doctor` profile: V100, Strix Halo (gfx1151), Apple Silicon |
-| No PEFT / LoRA / TRL in Go | Designed here; LoRA + SFT land on GoMLX (V100 first), QLoRA next |
-| Hugging Face zoo vs a handful of Go ports | Machine-readable [catalog](catalog/models) with per-box status |
-| torchvision / torchaudio | Transform + ONNX pipeline slice — not those full zoos |
-| Accelerate / DeepSpeed / FSDP | Accelerate-lite API now; FSDP wraps GoMLX Shardy on multi-V100 later |
-| One backend fast on Mac + CUDA + Halo | Layer A: one Go API. Layer B: real compilers per box (see [docs/gaps/backend.md](docs/gaps/backend.md)) |
+| No PEFT / LoRA / TRL in Go | `train lora` / `train qlora` + `generate --adapter` on tiny GPT-2 (Mac e2e) |
+| Hugging Face zoo vs a handful of Go ports | `pull <catalog-id>` + [catalog](catalog/models) with per-box status |
+| torchvision / torchaudio | `embed --vision` + `transcribe` via `internal/vision` / `internal/audio` |
+| Accelerate / DeepSpeed / FSDP | `internal/dist`: accum, checkpoint, `--resume`, `--profile` (FSDP later) |
+| One backend fast on Mac + CUDA + Halo | Layer A: `doctor`/`generate`/`embed` bind engines. Layer B: compilers per box |
 
 This is **honest software**. Halo GPU training in Go is an experiment. Unsloth will not be ported. DeepSpeed will not be rewritten.
 
@@ -44,10 +51,11 @@ Read the machine notes:
 - [docs/lab/v100.md](docs/lab/v100.md)
 - [docs/lab/halo.md](docs/lab/halo.md)
 - [docs/lab/mac.md](docs/lab/mac.md)
+- [docs/lab/mvp-smoke.md](docs/lab/mvp-smoke.md) — three-machine MVP checklist
 
 ## Install
 
-Requires [Go 1.22+](https://go.dev/dl/).
+Requires [Go 1.27+](https://go.dev/dl/).
 
 ```bash
 go install github.com/shaneburrell/quikaitools/cmd/quikaitools@latest
