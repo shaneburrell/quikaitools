@@ -1,0 +1,15 @@
+id: tiny-random-gpt2
+name: tiny-random-gpt2
+task: generate
+formats: [safetensors]
+license: apache-2.0
+source: https://huggingface.co/hf-internal-testing/tiny-random-gpt2
+notes: Super-small GPT-2 (n_embd=32, 5 layers, vocab 1000, ~450KB). Default quikaitools pull / LoRA lab model. Weights are random; used to prove the trainer, not to tell stories.
+machines:
+  v100: works
+  halo: works
+  mac: works
+engine:
+  v100: quikaitools-lora
+  halo: quikaitools-lora
+  mac: quikaitools-lora

@@ -5,14 +5,18 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/shaneburrell/quikaitools/catalog"
 	"github.com/shaneburrell/quikaitools/internal/backend"
+	"github.com/shaneburrell/quikaitools/internal/hub"
+	"github.com/shaneburrell/quikaitools/internal/train"
 	"github.com/shaneburrell/quikaitools/internal/zoo"
 )
 
-const Version = "0.1.0"
+const Version = "0.2.0"
 
 // Main is the CLI entrypoint. args[0] is the program name.
 func Main(args []string, stdout, stderr io.Writer) int {
@@ -28,6 +32,10 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		return cmdDoctor(args[2:], stdout, stderr)
 	case "catalog":
 		return cmdCatalog(args[2:], stdout, stderr)
+	case "pull":
+		return cmdPull(args[2:], stdout, stderr)
+	case "train":
+		return cmdTrain(args[2:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command %q\n\n", args[1])
 		printUsage(stderr)
@@ -41,7 +49,11 @@ func printUsage(w io.Writer) {
 Usage:
   quikaitools doctor [--profile auto|v100|cuda|halo|mac|cpu]
   quikaitools catalog [--task TASK] [--machine v100|halo|mac] [--catalog DIR]
+  quikaitools pull [HF_REPO]
+  quikaitools train lora --model DIR --data FILE [--steps N] [--rank R] [--out DIR]
   quikaitools version
+
+Default pull repo: hf-internal-testing/tiny-random-gpt2 (32d, 5 layers, ~450KB).
 
 Docs: https://github.com/shaneburrell/quikaitools
 `)
@@ -166,12 +178,137 @@ func loadCatalog(dir string) (zoo.Catalog, error) {
 }
 
 func join(s []string) string {
-	out := ""
-	for i, v := range s {
-		if i > 0 {
-			out += ","
+	return strings.Join(s, ",")
+}
+
+// TinyRepo is the default LoRA lab model (~450KB safetensors).
+const TinyRepo = "hf-internal-testing/tiny-random-gpt2"
+
+func cmdPull(args []string, stdout, stderr io.Writer) int {
+	repo := TinyRepo
+	cache := ""
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--cache":
+			i++
+			if i >= len(args) {
+				fmt.Fprintln(stderr, "--cache needs a value")
+				return 2
+			}
+			cache = args[i]
+		case "-h", "--help":
+			fmt.Fprintf(stdout, "quikaitools pull [HF_REPO] [--cache DIR]\nDefault repo: %s\n", TinyRepo)
+			return 0
+		default:
+			if strings.HasPrefix(args[i], "-") {
+				fmt.Fprintf(stderr, "unknown flag %s\n", args[i])
+				return 2
+			}
+			repo = args[i]
 		}
-		out += v
 	}
-	return out
+	c := hub.New(cache)
+	dir, err := c.Pull(repo, nil)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "pulled %s\n%s\n", repo, dir)
+	return 0
+}
+
+func cmdTrain(args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" {
+		fmt.Fprintln(stdout, "quikaitools train lora --model DIR --data FILE [--steps N] [--rank R] [--lr F] [--out DIR]")
+		return 0
+	}
+	if args[0] != "lora" {
+		fmt.Fprintf(stderr, "unknown train recipe %q (want lora)\n", args[0])
+		return 2
+	}
+	opt := train.LoRAOptions{Steps: 30, SeqLen: 32, Rank: 4, Alpha: 8, LR: 3e-3}
+	for i := 1; i < len(args); i++ {
+		need := func() (string, bool) {
+			i++
+			if i >= len(args) {
+				fmt.Fprintf(stderr, "%s needs a value\n", args[i-1])
+				return "", false
+			}
+			return args[i], true
+		}
+		switch args[i] {
+		case "--model":
+			v, ok := need()
+			if !ok {
+				return 2
+			}
+			opt.ModelDir = v
+		case "--data":
+			v, ok := need()
+			if !ok {
+				return 2
+			}
+			opt.DataPath = v
+		case "--out":
+			v, ok := need()
+			if !ok {
+				return 2
+			}
+			opt.OutDir = v
+		case "--steps":
+			v, ok := need()
+			if !ok {
+				return 2
+			}
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				fmt.Fprintln(stderr, err)
+				return 2
+			}
+			opt.Steps = n
+		case "--rank":
+			v, ok := need()
+			if !ok {
+				return 2
+			}
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				fmt.Fprintln(stderr, err)
+				return 2
+			}
+			opt.Rank = n
+		case "--lr":
+			v, ok := need()
+			if !ok {
+				return 2
+			}
+			f, err := strconv.ParseFloat(v, 64)
+			if err != nil {
+				fmt.Fprintln(stderr, err)
+				return 2
+			}
+			opt.LR = f
+		default:
+			fmt.Fprintf(stderr, "unknown flag %s\n", args[i])
+			return 2
+		}
+	}
+	if opt.ModelDir == "" || opt.DataPath == "" {
+		fmt.Fprintln(stderr, "train lora requires --model and --data")
+		return 2
+	}
+	if opt.OutDir == "" {
+		opt.OutDir = filepath.Join(opt.ModelDir, "adapter-lora")
+	}
+	losses, err := train.RunLoRA(opt)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "lora steps=%d rank=%d trainable done\n", len(losses), opt.Rank)
+	if len(losses) > 0 {
+		fmt.Fprintf(stdout, "loss_first=%.4f loss_last=%.4f\n", losses[0], losses[len(losses)-1])
+	}
+	fmt.Fprintf(stdout, "adapter %s\n", opt.OutDir)
+	return 0
 }

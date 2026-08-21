@@ -2,7 +2,7 @@
 
 **Job in PyTorch:** cheap fine-tune, SFT/DPO recipes, VRAM tricks.
 
-**Status:** design in this doc; package `internal/peft` and `internal/train` not shipped in v0.1.
+**Status:** v0.2 ships LoRA + SFT on a tiny GPT-2 (`quikaitools pull` + `train lora`). QLoRA and DPO are still later.
 
 ## What we will write
 
@@ -25,6 +25,18 @@ Full TRL (PPO, every reward trainer) is a later catalog, not the first two train
 | Mac | LoRA only if Relux/go-darwinml can train the base; otherwise CPU demo. |
 | Halo | Apply or merge adapters at **infer** (GGUF) before Halo GPU train exists. |
 
+## Lab command (tiny model)
+
+```bash
+quikaitools pull hf-internal-testing/tiny-random-gpt2
+quikaitools train lora \
+  --model ~/.cache/quikaitools/models/hf-internal-testing/tiny-random-gpt2 \
+  --data testdata/fixtures/stories.txt \
+  --steps 30 --rank 4 --out testdata/artifacts/adapter-lora
+```
+
+The Hub model is ~450KB (n_embd=32, 5 layers). Weights are random; this proves the Go LoRA loop, not story quality. Adapter JSON is written to `--out`.
+
 ## Success
 
-`quikaitools train sft --profile v100 --adapter lora` against a catalog model, checkpoint that `doctor` still reports `gomlx-xla-cuda`.
+`quikaitools train lora` against the pulled tiny GPT-2 writes `adapter.json` and a finite loss curve.

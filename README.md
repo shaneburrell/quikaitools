@@ -11,7 +11,9 @@ QuikAITools is not another tensor core and not a Python wrapper. It is a **publi
 ```bash
 quikaitools doctor
 quikaitools catalog --machine halo --task generate
-quikaitools catalog --task embed
+quikaitools pull                          # hf-internal-testing/tiny-random-gpt2
+quikaitools train lora --model ~/.cache/quikaitools/models/hf-internal-testing/tiny-random-gpt2 \
+  --data testdata/fixtures/stories.txt --steps 30 --rank 4
 ```
 
 ## Why QuikAITools?
@@ -124,10 +126,15 @@ We are filling **the job**, not cloning the Python trees.
 
 ```text
 cmd/quikaitools/        CLI entrypoint
-internal/cli/           doctor, catalog, version
+internal/cli/           doctor, catalog, pull, train
 internal/backend/       Layer A device profiles
+internal/hub/           Hugging Face download
+internal/gpt2/          Tiny GPT-2 forward/backward
+internal/peft/          LoRA adapters + SFT step
+internal/train/         train lora job
 internal/zoo/           Catalog loader
 catalog/models/         Per-model YAML (status on v100 / halo / mac)
+testdata/fixtures/      Checked-in train text (not artifacts)
 docs/lab/               Machine install + “what is fast”
 docs/compose/           How to use GoMLX, Hugot, llama.cpp
 docs/gaps/              Designs for the five PyTorch gaps
@@ -163,12 +170,13 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 **v0.1** — public guide, Layer A `doctor` / `catalog`, MIT, CI.
 
+**v0.2** — `pull` + `train lora` on `hf-internal-testing/tiny-random-gpt2` (pure Go GPT-2 + LoRA, no PyTorch).
+
 **Next**
 
-- LoRA + SFT trainer on GoMLX (V100)
+- QLoRA on V100; DPO
 - `internal/vision` and `internal/audio` transforms
 - Accelerate-lite trainer wrapper (FP16, accum, checkpoint)
-- QLoRA on 16 GB V100
 - go-darwinml + Halo JAX ROCm PJRT experiments, written up in the backend gap doc
 
 ## License

@@ -26,7 +26,7 @@ test-race:
 
 cover:
 	mkdir -p $(ARTIFACTS)
-	$(GO) test $(COVER_PKG) -coverprofile=$(ARTIFACTS)/coverage.out -covermode=atomic
+	$(GO) test -coverpkg=$(COVER_PKG) $(COVER_PKG) -coverprofile=$(ARTIFACTS)/coverage.out -covermode=atomic
 	$(GO) tool cover -html=$(ARTIFACTS)/coverage.out -o $(ARTIFACTS)/coverage.html
 	$(GO) tool cover -func=$(ARTIFACTS)/coverage.out | tee $(ARTIFACTS)/coverage.txt
 	@total=$$($(GO) tool cover -func=$(ARTIFACTS)/coverage.out | awk '/^total:/{print $$3}' | tr -d '%'); \
