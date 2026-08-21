@@ -24,6 +24,8 @@ Starter zoo (Mac-runnable paths):
 
 After Mac e2e, `mac: works` on the preprocess/CLI paths. Halo/V100 stay `untested` until [mvp-smoke.md](../lab/mvp-smoke.md) is filled.
 
+ONNX catalog targets (`nomic-embed-text`, CLIP, Whisper, classify/rerank) stay `untested` with **stub** runtime until Hugot/ORT is linked — do not mark `works` for ONNX embed/ASR/classify.
+
 ## Conversion boundary
 
 HF → ONNX / GGUF stays a documented export step. Runtime stays Go.

@@ -2,7 +2,6 @@ package train
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -14,21 +13,21 @@ import (
 
 // LoRAOptions is the SFT+LoRA / QLoRA job.
 type LoRAOptions struct {
-	ModelDir   string
-	DataPath   string
-	OutDir     string
-	Steps      int
-	SeqLen     int
-	Rank       int
-	Alpha      float32
-	LR         float64
-	Text       string // if set, skip DataPath
-	QLoRA      bool
-	Accum      int
-	Resume     string
-	CkptEvery  int
-	Profile    backend.Kind
-	EvalEvery  int
+	ModelDir  string
+	DataPath  string
+	OutDir    string
+	Steps     int
+	SeqLen    int
+	Rank      int
+	Alpha     float32
+	LR        float64
+	Text      string // if set, skip DataPath
+	QLoRA     bool
+	Accum     int
+	Resume    string
+	CkptEvery int
+	Profile   backend.Kind
+	EvalEvery int
 }
 
 // RunLoRA loads a pulled GPT-2 folder and trains LoRA (or QLoRA).
@@ -55,11 +54,11 @@ func RunLoRA(opt LoRAOptions) (losses []float32, err error) {
 	}
 	text := opt.Text
 	if text == "" {
-		b, err := os.ReadFile(opt.DataPath)
+		var err error
+		text, err = loadTrainText(opt.DataPath)
 		if err != nil {
 			return nil, err
 		}
-		text = string(b)
 	}
 	ids := tok.Encode(text)
 	if len(ids) < 3 {

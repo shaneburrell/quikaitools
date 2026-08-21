@@ -64,7 +64,7 @@ func (q QuantLinear) MatMul(x []float32, rows int) []float32 {
 				} else {
 					u = (q.Packed[byteIdx] >> 4) & 0x0F
 				}
-				w := (float32(int8(u)-8)) * s
+				w := (float32(int8(u) - 8)) * s
 				sum += xr[i] * w
 			}
 			dst[j] = sum

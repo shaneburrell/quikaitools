@@ -26,14 +26,14 @@ make build
 | `make build` | `bin/quikaitools` |
 | `make clean` | Remove `bin/`, `dist/`, `testdata/artifacts/` |
 
-Generated coverage, benches, and CLI dumps land in `testdata/artifacts/` (gitignored). See [testdata/README.md](testdata/README.md). Never commit those files.
+Generated coverage, benches, and CLI dumps land in `testdata/artifacts/` (gitignored). See [testdata/README.md](testdata/README.md). Never commit those files, `*.gguf`, or `adapters/`.
 
-## Before you open a PR
+## Before you commit
 
 - [ ] `make check` passes
 - [ ] New catalog models have `id`, `task`, and machine status
 - [ ] Lab/compose/gap docs updated if you change what `doctor` binds
-- [ ] No secrets, `.env`, local model weights, or `testdata/artifacts/` committed
+- [ ] No secrets, `.env`, local model weights, `testdata/artifacts/`, or `*.gguf` committed
 
 ## Design priorities
 

@@ -2,7 +2,7 @@
 
 Checked-in fixtures live here (or next to the package under `internal/*/testdata`).
 
-**Generated output goes in `artifacts/`.** That directory is gitignored. Do not commit coverage, benches, doctor dumps, or soak trees.
+**Generated output goes in `artifacts/`.** That directory is gitignored. Do not commit coverage, benches, doctor dumps, soak trees, adapters, or `*.gguf`.
 
 ```bash
 make cover    # testdata/artifacts/coverage.out + coverage.html + coverage.txt

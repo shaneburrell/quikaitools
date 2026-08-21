@@ -19,13 +19,13 @@ const (
 
 // Job is the trainer job config.
 type Job struct {
-	Profile       backend.Profile `json:"profile"`
-	AccumSteps    int             `json:"accum_steps"`
-	CheckpointDir string          `json:"checkpoint_dir"`
-	CheckpointEvery int           `json:"checkpoint_every"`
-	FP16          bool            `json:"fp16"`
-	ShardMode     ShardMode       `json:"shard_mode"`
-	ResumeFrom    string          `json:"resume_from,omitempty"`
+	Profile         backend.Profile `json:"profile"`
+	AccumSteps      int             `json:"accum_steps"`
+	CheckpointDir   string          `json:"checkpoint_dir"`
+	CheckpointEvery int             `json:"checkpoint_every"`
+	FP16            bool            `json:"fp16"`
+	ShardMode       ShardMode       `json:"shard_mode"`
+	ResumeFrom      string          `json:"resume_from,omitempty"`
 }
 
 // NewJob builds defaults from a profile.

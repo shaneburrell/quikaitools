@@ -11,6 +11,8 @@ import (
 
 	"github.com/shaneburrell/quikaitools/catalog"
 	"github.com/shaneburrell/quikaitools/internal/backend"
+	"github.com/shaneburrell/quikaitools/internal/chatfmt"
+	"github.com/shaneburrell/quikaitools/internal/exportx"
 	"github.com/shaneburrell/quikaitools/internal/gpt2"
 	"github.com/shaneburrell/quikaitools/internal/hub"
 	"github.com/shaneburrell/quikaitools/internal/infer"
@@ -19,7 +21,7 @@ import (
 	"github.com/shaneburrell/quikaitools/internal/zoo"
 )
 
-const Version = "0.3.0"
+const Version = "0.4.0"
 
 // Main is the CLI entrypoint. args[0] is the program name.
 func Main(args []string, stdout, stderr io.Writer) int {
@@ -45,6 +47,10 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		return cmdEmbed(args[2:], stdout, stderr)
 	case "transcribe":
 		return cmdTranscribe(args[2:], stdout, stderr)
+	case "export":
+		return cmdExport(args[2:], stdout, stderr)
+	case "validate-sft":
+		return cmdValidateSFT(args[2:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command %q\n\n", args[1])
 		printUsage(stderr)
@@ -61,10 +67,13 @@ Usage:
   quikaitools pull [HF_REPO|catalog-id] [--cache DIR]
   quikaitools train lora|qlora --model DIR --data FILE [options]
   quikaitools generate --model DIR [--adapter DIR] [--prompt TEXT] [--tokens N]
+      [--template chatml|raw] [--messages JSON]
   quikaitools generate --gguf FILE [--prompt TEXT] [--tokens N] [--profile KIND]
   quikaitools embed --model DIR --text TEXT
   quikaitools embed --vision --model DIR --image FILE
   quikaitools transcribe --model DIR --audio FILE
+  quikaitools export merge|gguf|modelfile [flags]
+  quikaitools validate-sft --path FILE.jsonl
   quikaitools version
 
 Docs: https://github.com/shaneburrell/quikaitools
@@ -263,7 +272,7 @@ func cmdPull(args []string, stdout, stderr io.Writer) int {
 
 func cmdTrain(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" {
-		fmt.Fprintln(stdout, "quikaitools train lora|qlora --model DIR --data FILE [--steps N] [--rank R] [--lr F] [--out DIR] [--accum N] [--resume DIR] [--profile KIND] [--eval-every N]")
+		fmt.Fprintln(stdout, "quikaitools train lora|qlora --model DIR --data FILE [--steps N] [--rank R] [--lr F] [--out DIR] [--accum N] [--resume DIR] [--profile KIND] [--eval-every N] [--smoke]")
 		return 0
 	}
 	recipe := args[0]
@@ -367,6 +376,13 @@ func cmdTrain(args []string, stdout, stderr io.Writer) int {
 				return 2
 			}
 			opt.LR = f
+		case "--smoke":
+			if opt.Steps > 30 {
+				opt.Steps = 20
+			}
+			opt.Steps = 20
+			opt.SeqLen = 32
+			opt.Accum = 4
 		default:
 			fmt.Fprintf(stderr, "unknown flag %s\n", args[i])
 			return 2
@@ -397,7 +413,7 @@ func cmdTrain(args []string, stdout, stderr io.Writer) int {
 }
 
 func cmdGenerate(args []string, stdout, stderr io.Writer) int {
-	var model, adapter, gguf, prompt string
+	var model, adapter, gguf, prompt, template, messagesJSON string
 	tokens := 16
 	profile := backend.KindAuto
 	for i := 0; i < len(args); i++ {
@@ -434,6 +450,18 @@ func cmdGenerate(args []string, stdout, stderr io.Writer) int {
 				return 2
 			}
 			prompt = v
+		case "--template":
+			v, ok := need()
+			if !ok {
+				return 2
+			}
+			template = v
+		case "--messages":
+			v, ok := need()
+			if !ok {
+				return 2
+			}
+			messagesJSON = v
 		case "--tokens":
 			v, ok := need()
 			if !ok {
@@ -452,14 +480,30 @@ func cmdGenerate(args []string, stdout, stderr io.Writer) int {
 			}
 			profile = backend.Kind(v)
 		case "-h", "--help":
-			fmt.Fprintln(stdout, "quikaitools generate --model DIR [--adapter DIR] | --gguf FILE [--prompt TEXT] [--tokens N]")
+			fmt.Fprintln(stdout, "quikaitools generate --model DIR [--adapter DIR] | --gguf FILE [--prompt TEXT] [--template chatml|raw] [--messages JSON] [--tokens N]")
 			return 0
 		default:
 			fmt.Fprintf(stderr, "unknown flag %s\n", args[i])
 			return 2
 		}
 	}
-	if prompt == "" {
+	if messagesJSON != "" || template != "" {
+		var msgs []chatfmt.Message
+		if messagesJSON != "" {
+			var err error
+			msgs, err = chatfmt.ParseMessagesJSON(messagesJSON)
+			if err != nil {
+				fmt.Fprintln(stderr, err)
+				return 2
+			}
+		}
+		formatted, err := chatfmt.Apply(template, msgs, prompt)
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 2
+		}
+		prompt = formatted
+	} else if prompt == "" {
 		prompt = "Hello"
 	}
 	if gguf != "" {
@@ -636,4 +680,173 @@ func formatVec(v []float32, n int) string {
 		parts[i] = fmt.Sprintf("%.4f", v[i])
 	}
 	return strings.Join(parts, " ")
+}
+
+func cmdValidateSFT(args []string, stdout, stderr io.Writer) int {
+	path := ""
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--path":
+			i++
+			if i >= len(args) {
+				fmt.Fprintln(stderr, "--path needs a value")
+				return 2
+			}
+			path = args[i]
+		case "-h", "--help":
+			fmt.Fprintln(stdout, "quikaitools validate-sft --path FILE.jsonl")
+			return 0
+		default:
+			fmt.Fprintf(stderr, "unknown flag %s\n", args[i])
+			return 2
+		}
+	}
+	if path == "" {
+		fmt.Fprintln(stderr, "validate-sft requires --path")
+		return 2
+	}
+	total, issues, err := train.ValidateMessagesJSONL(path)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	if len(issues) == 0 {
+		fmt.Fprintf(stdout, "VALID %s: %d rows\n", path, total)
+		return 0
+	}
+	fmt.Fprintf(stdout, "INVALID %s: %d rows, %d issues\n", path, total, len(issues))
+	for i, issue := range issues {
+		if i >= 20 {
+			break
+		}
+		fmt.Fprintf(stdout, "  - %s\n", issue)
+	}
+	return 1
+}
+
+func cmdExport(args []string, stdout, stderr io.Writer) int {
+	if len(args) < 1 {
+		fmt.Fprintln(stderr, "export requires merge|gguf|modelfile")
+		return 2
+	}
+	sub := args[0]
+	args = args[1:]
+	switch sub {
+	case "merge":
+		return cmdExportMerge(args, stdout, stderr)
+	case "gguf":
+		return cmdExportGGUF(args, stdout, stderr)
+	case "modelfile":
+		return cmdExportModelfile(args, stdout, stderr)
+	case "-h", "--help":
+		fmt.Fprintln(stdout, "quikaitools export merge|gguf|modelfile …")
+		return 0
+	default:
+		fmt.Fprintf(stderr, "unknown export subcommand %q\n", sub)
+		return 2
+	}
+}
+
+func cmdExportMerge(args []string, stdout, stderr io.Writer) int {
+	model, adapter, out := "", "", ""
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--model":
+			i++
+			model = args[i]
+		case "--adapter":
+			i++
+			adapter = args[i]
+		case "--out":
+			i++
+			out = args[i]
+		case "-h", "--help":
+			fmt.Fprintln(stdout, "quikaitools export merge --model DIR --adapter DIR --out DIR")
+			return 0
+		default:
+			fmt.Fprintf(stderr, "unknown flag %s\n", args[i])
+			return 2
+		}
+	}
+	if model == "" || adapter == "" || out == "" {
+		fmt.Fprintln(stderr, "export merge requires --model, --adapter, and --out")
+		return 2
+	}
+	if err := exportx.MergeGPT2LoRA(model, adapter, out); err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "merged -> %s\n", out)
+	return 0
+}
+
+func cmdExportGGUF(args []string, stdout, stderr io.Writer) int {
+	model, out, quant := "", "", "Q4_K_M"
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--model":
+			i++
+			model = args[i]
+		case "--out":
+			i++
+			out = args[i]
+		case "--quant":
+			i++
+			quant = args[i]
+		case "-h", "--help":
+			fmt.Fprintln(stdout, "quikaitools export gguf --model DIR --out FILE [--quant Q4_K_M]")
+			return 0
+		default:
+			fmt.Fprintf(stderr, "unknown flag %s\n", args[i])
+			return 2
+		}
+	}
+	if model == "" || out == "" {
+		fmt.Fprintln(stderr, "export gguf requires --model and --out")
+		return 2
+	}
+	skip, err := exportx.ConvertGGUF(model, out, quant)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	if skip != "" {
+		fmt.Fprintf(stdout, "SKIP: %s\n", skip)
+		return 0
+	}
+	fmt.Fprintf(stdout, "gguf -> %s\n", out)
+	return 0
+}
+
+func cmdExportModelfile(args []string, stdout, stderr io.Writer) int {
+	template, gguf, out := "", "", ""
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--template":
+			i++
+			template = args[i]
+		case "--gguf":
+			i++
+			gguf = args[i]
+		case "--out":
+			i++
+			out = args[i]
+		case "-h", "--help":
+			fmt.Fprintln(stdout, "quikaitools export modelfile --gguf FILE --out FILE [--template FILE]")
+			return 0
+		default:
+			fmt.Fprintf(stderr, "unknown flag %s\n", args[i])
+			return 2
+		}
+	}
+	if gguf == "" || out == "" {
+		fmt.Fprintln(stderr, "export modelfile requires --gguf and --out")
+		return 2
+	}
+	if err := exportx.WriteModelfile(template, gguf, out); err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "modelfile -> %s\n", out)
+	return 0
 }

@@ -25,7 +25,7 @@ func TestVersionAndHelp(t *testing.T) {
 	if code := Main([]string{"quikaitools", "help"}, &out, &out); code != 0 {
 		t.Fatalf("help code=%d", code)
 	}
-	if !strings.Contains(out.String(), "doctor") || !strings.Contains(out.String(), "train") {
+	if !strings.Contains(out.String(), "doctor") || !strings.Contains(out.String(), "train") || !strings.Contains(out.String(), "export") {
 		t.Fatalf("help: %s", out.String())
 	}
 }
@@ -167,5 +167,48 @@ func mustWriteTiny(t *testing.T, dir string) {
 	base := gpt2.NewRandom(gpt2.Config{NEmbd: 8, NHead: 2, NLayer: 1, NPositions: 32, VocabSize: 32, NInner: 16}, 11)
 	if err := gpt2.WriteDir(dir, base); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestExportMergeAndValidateSFT(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteTiny(t, dir)
+	data := filepath.Join(dir, "train.jsonl")
+	row := `{"messages":[{"role":"system","content":"s"},{"role":"user","content":"hello world tokens"},{"role":"assistant","content":"hi there friend"}]}` + "\n"
+	if err := os.WriteFile(data, []byte(row), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out, errb bytes.Buffer
+	if code := Main([]string{"quikaitools", "validate-sft", "--path", data}, &out, &errb); code != 0 {
+		t.Fatalf("validate code=%d err=%s", code, errb.String())
+	}
+	adapter := filepath.Join(dir, "ad")
+	out.Reset()
+	errb.Reset()
+	code := Main([]string{"quikaitools", "train", "lora", "--smoke", "--model", dir, "--data", data, "--steps", "2", "--rank", "2", "--out", adapter, "--profile", "cpu"}, &out, &errb)
+	if code != 0 {
+		t.Fatalf("train code=%d err=%s out=%s", code, errb.String(), out.String())
+	}
+	merged := filepath.Join(dir, "merged")
+	out.Reset()
+	errb.Reset()
+	code = Main([]string{"quikaitools", "export", "merge", "--model", dir, "--adapter", adapter, "--out", merged}, &out, &errb)
+	if code != 0 {
+		t.Fatalf("merge code=%d err=%s", code, errb.String())
+	}
+	out.Reset()
+	errb.Reset()
+	code = Main([]string{"quikaitools", "export", "gguf", "--model", merged, "--out", filepath.Join(dir, "m.gguf")}, &out, &errb)
+	if code != 0 {
+		t.Fatalf("gguf code=%d err=%s", code, errb.String())
+	}
+	if !strings.Contains(out.String(), "SKIP") && !strings.Contains(out.String(), "gguf") {
+		t.Fatalf("gguf out=%s", out.String())
+	}
+	out.Reset()
+	errb.Reset()
+	code = Main([]string{"quikaitools", "generate", "--model", dir, "--template", "chatml", "--messages", `[{"role":"user","content":"aa"}]`, "--tokens", "2"}, &out, &errb)
+	if code != 0 {
+		t.Fatalf("generate template code=%d err=%s", code, errb.String())
 	}
 }

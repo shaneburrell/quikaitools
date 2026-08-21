@@ -182,9 +182,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 **v0.3 (MVP)** — `train qlora`, `generate` (+ `--adapter` / `--gguf`), `embed` / `embed --vision` / `transcribe`, Accelerate-lite accum/checkpoint/resume, catalog-id pull, Go 1.27 CI. ONNX paths are labeled stubs until Hugot/ORT is linked; GGUF needs a local `llama-cli`. Trainer is portable Go (profile strings are Layer A intent, not a bound GoMLX session yet).
 
+**v0.4** — `export merge|gguf|modelfile`, messages JSONL train + `validate-sft`, ChatML `--template` / `--messages` on `generate`. ONNX remains stub until Hugot/ORT is linked.
+
 **Next**
 
-- Real ONNX via Hugot/ORT; chat templates; DPO
+- Real ONNX via Hugot/ORT; DPO
+- Instruct-model LoRA beyond GPT-2 (Layer B / GoMLX)
 - Wire FP16 into a GPU train path (Layer B / GoMLX XLA CUDA)
 - go-darwinml + Halo JAX ROCm PJRT experiments
 

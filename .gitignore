@@ -12,3 +12,7 @@ coverage.html
 *.bench
 .env
 .env.*
+
+# Local ML dumps (never commit)
+adapters/
+*.gguf
