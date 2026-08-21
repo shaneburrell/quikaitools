@@ -1,0 +1,15 @@
+id: mxbai-rerank-base-v1
+name: MixedBread Reranker v1
+task: rerank
+formats: [onnx]
+license: apache-2.0
+source: https://huggingface.co/mixedbread-ai/mxbai-rerank-base-v1
+notes: Cross-encoder rerank. GoMLX has a conversion demo via onnx-gomlx.
+machines:
+  v100: works
+  halo: cpu_only
+  mac: untested
+engine:
+  v100: hugot-ort-cuda
+  halo: hugot-go
+  mac: hugot-coreml

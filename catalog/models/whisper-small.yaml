@@ -1,0 +1,15 @@
+id: whisper-small
+name: Whisper Small
+task: asr
+formats: [onnx, gguf]
+license: mit
+source: https://huggingface.co/openai/whisper-small
+notes: First torchaudio-gap target. Use ONNX + audio resample/mel in-process, or a GGUF whisper build via llama.cpp-class tools.
+machines:
+  v100: untested
+  halo: untested
+  mac: untested
+engine:
+  v100: hugot-ort-cuda
+  halo: hugot-go
+  mac: hugot-coreml

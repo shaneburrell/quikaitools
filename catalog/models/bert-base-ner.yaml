@@ -1,0 +1,15 @@
+id: bert-base-ner
+name: BERT-base NER
+task: token-classify
+formats: [onnx]
+license: mit
+source: https://huggingface.co/dslim/bert-base-NER
+notes: GoMLX ships an ONNX-converted NER demo. Token classification, not generation.
+machines:
+  v100: works
+  halo: cpu_only
+  mac: works
+engine:
+  v100: hugot-ort-cuda
+  halo: hugot-go
+  mac: hugot-coreml

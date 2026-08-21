@@ -1,0 +1,15 @@
+id: clip-vit-base-patch32
+name: CLIP ViT-B/32
+task: vision-embed
+formats: [onnx]
+license: mit
+source: https://huggingface.co/openai/clip-vit-base-patch32
+notes: First torchvision-gap target. Pair with internal/vision resize+normalize once that package lands.
+machines:
+  v100: untested
+  halo: cpu_only
+  mac: untested
+engine:
+  v100: hugot-ort-cuda
+  halo: hugot-go
+  mac: hugot-coreml

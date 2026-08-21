@@ -1,0 +1,15 @@
+id: nomic-embed-text
+name: Nomic Embed Text
+task: embed
+formats: [onnx]
+license: apache-2.0
+source: https://huggingface.co/nomic-ai/nomic-embed-text-v1.5
+notes: Sentence embedding. Prefer ONNX via Hugot. On V100 use ORT CUDA; Halo stays on the Go session until a GPU ONNX path exists.
+machines:
+  v100: works
+  halo: cpu_only
+  mac: works
+engine:
+  v100: hugot-ort-cuda
+  halo: hugot-go
+  mac: hugot-coreml
