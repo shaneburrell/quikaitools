@@ -15,9 +15,9 @@ Profile: Apple Silicon → `doctor` reports `mac`, `infer_gguf=llamacpp-metal`, 
 | train resume | `./bin/quikaitools train lora --model … --data … --steps 5 --resume testdata/artifacts/adapter-lora --out testdata/artifacts/adapter-lora-r2` | resumes from adapter |
 | generate + adapter | `./bin/quikaitools generate --model … --adapter testdata/artifacts/adapter-lora --prompt "Once upon" --tokens 8` | prints tokens (train→use) |
 | train qlora | `./bin/quikaitools train qlora --model … --data … --steps 10 --out testdata/artifacts/adapter-qlora` | 4-bit frozen base + LoRA; loss finite |
-| embed text | `./bin/quikaitools embed --model … --text "hello world"` | `engine=bag-of-wte` |
-| embed vision | `./bin/quikaitools embed --vision --model . --image testdata/fixtures/red.png` | preprocess + labeled stub vector (no ORT yet) |
-| transcribe | `./bin/quikaitools transcribe --model . --audio testdata/fixtures/tone.wav` | mel preprocess + labeled stub transcript |
+| embed text | `./bin/quikaitools embed --model … --text "hello world"` | `engine=bag-of-wte` on GPT-2 folders; ONNX catalogs stay stub until ORT |
+| embed vision | `./bin/quikaitools embed --vision --model . --image testdata/fixtures/red.png` | real preprocess + labeled stub vector |
+| transcribe | `./bin/quikaitools transcribe --model . --audio testdata/fixtures/tone.wav` | real mel + labeled stub transcript |
 | generate GGUF | `./bin/quikaitools generate --gguf PATH/to/model.gguf --prompt "Hi" --tokens 16` | requires llama.cpp Metal binary |
 
 CI stays CPU-only (`go test ./...`); Hub/Metal runs are local. Artifacts under `testdata/artifacts/` are gitignored.

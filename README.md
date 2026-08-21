@@ -93,14 +93,14 @@ export QUIKAITOOLS_PROFILE=halo
 ```text
 quikaitools doctor ──► backend.Detect ──► Profile (v100 | halo | mac | cpu)
                                               │
-catalog/*.yaml ──► zoo.Load ──────────────────┤ per-machine status + engine
+catalog/*.yaml ──► zoo.Load ──────────────────┤ per-machine status + engine labels
                                               ▼
-              Train  → GoMLX (CUDA) or portable Go
-              ONNX   → Hugot (ORT CUDA / CoreML / Go)
-              GGUF   → llama.cpp (CUDA / Vulkan|HIP / Metal)
+              Train  → portable Go LoRA/QLoRA (GoMLX XLA = Layer B)
+              ONNX   → preprocess + stub until Hugot/ORT linked
+              GGUF   → llama.cpp exec (CUDA / Vulkan|HIP / Metal) when binary present
 ```
 
-**Layer A** (this repo, now): one Go API. Applications do not name GoMLX vs Hugot vs llama.cpp.
+**Layer A** (this repo, now): one Go API and profile strings. Applications do not name engines in app code — but many engines are still unbound (see `doctor` notes).
 
 **Layer B** (long pole): make GoMLX’s `compute.Backend` actually fast on Mac GPU and Halo iGPU. Documented in [docs/gaps/backend.md](docs/gaps/backend.md).
 
@@ -178,14 +178,15 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 **v0.1** — public guide, Layer A `doctor` / `catalog`, MIT, CI.
 
-**v0.2** — `pull` + `train lora` on `hf-internal-testing/tiny-random-gpt2` (pure Go GPT-2 + LoRA, no PyTorch).
+**v0.2** — `pull` + `train lora` on `hf-internal-testing/tiny-random-gpt2` (pure Go GPT-2 + LoRA).
+
+**v0.3 (MVP)** — `train qlora`, `generate` (+ `--adapter` / `--gguf`), `embed` / `embed --vision` / `transcribe`, Accelerate-lite accum/checkpoint/resume, catalog-id pull, Go 1.27 CI. ONNX paths are labeled stubs until Hugot/ORT is linked; GGUF needs a local `llama-cli`. Trainer is portable Go (profile strings are Layer A intent, not a bound GoMLX session yet).
 
 **Next**
 
-- QLoRA on V100; DPO
-- `internal/vision` and `internal/audio` transforms
-- Accelerate-lite trainer wrapper (FP16, accum, checkpoint)
-- go-darwinml + Halo JAX ROCm PJRT experiments, written up in the backend gap doc
+- Real ONNX via Hugot/ORT; chat templates; DPO
+- Wire FP16 into a GPU train path (Layer B / GoMLX XLA CUDA)
+- go-darwinml + Halo JAX ROCm PJRT experiments
 
 ## License
 

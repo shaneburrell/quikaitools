@@ -4,11 +4,11 @@ task: asr
 formats: [onnx, gguf]
 license: mit
 source: https://huggingface.co/openai/whisper-small
-notes: First torchaudio-gap target. MVP transcribe builds log-mel in Go (internal/audio); full Whisper ONNX decode when ORT/Hugot is linked.
+notes: "MVP transcribe builds real log-mel then a labeled stub transcript. Untested until Whisper ONNX/ORT."
 machines:
   v100: untested
   halo: untested
-  mac: works
+  mac: untested
 engine:
   v100: hugot-ort-cuda
   halo: hugot-go

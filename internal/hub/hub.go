@@ -20,6 +20,17 @@ var DefaultFiles = []string{
 	"tokenizer_config.json",
 }
 
+// OptionalFiles may 404 without failing the pull.
+var OptionalFiles = map[string]bool{
+	"tokenizer_config.json": true,
+	"tokenizer.json":        true,
+	"vocab.txt":             true,
+	"onnx/model.onnx":       true,
+	"model.onnx":            true,
+	"README.md":             true,
+	"merges.txt":            true, // some tokenizers are vocab-only
+}
+
 // Client downloads Hub files.
 type Client struct {
 	Base  string
@@ -49,13 +60,13 @@ func (c *Client) ModelDir(repo string) string {
 }
 
 // Pull downloads files into ModelDir(repo). Existing files are kept.
-// Missing optional files (HTTP 404) are skipped with a note when skip404 is true.
+// Optional files (see OptionalFiles) may 404; required files must download.
 func (c *Client) Pull(repo string, files []string) (string, error) {
 	return c.PullOpts(repo, files, true)
 }
 
-// PullOpts is Pull with control over 404 skipping.
-func (c *Client) PullOpts(repo string, files []string, skip404 bool) (string, error) {
+// PullOpts is Pull with control over optional-file 404 skipping.
+func (c *Client) PullOpts(repo string, files []string, skipOptional404 bool) (string, error) {
 	if err := ValidateRepo(repo); err != nil {
 		return "", err
 	}
@@ -84,10 +95,8 @@ func (c *Client) PullOpts(repo string, files []string, skip404 bool) (string, er
 		}
 		url := fmt.Sprintf("%s/%s/resolve/main/%s", strings.TrimRight(c.Base, "/"), repo, name)
 		if err := c.download(url, dest); err != nil {
-			if skip404 && strings.Contains(err.Error(), "HTTP 404") {
-				continue
-			}
-			if name == "tokenizer_config.json" && strings.Contains(err.Error(), "HTTP 404") {
+			optional := OptionalFiles[name]
+			if skipOptional404 && optional && strings.Contains(err.Error(), "HTTP 404") {
 				continue
 			}
 			return dir, fmt.Errorf("%s: %w", name, err)

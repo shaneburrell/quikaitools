@@ -154,6 +154,9 @@ func (m *Model) forwardBackward(tokens []int) (float32, []float32) {
 			dfc[i] = dAct[i] * gpt2.GELUNewDeriv(v)
 		}
 		fcWT := gpt2.Transpose(blk.FcW, d, inn)
+		if m.useQ {
+			fcWT = gpt2.Transpose(m.qFC[li].Dequant(), d, inn)
+		}
 		dln2 := gpt2.MatMul(dfc, t, inn, fcWT, inn, d)
 		addVec(dln2, m.FC[li].backward(tp.ln2, dfc, t, scale))
 		dx2b, _, _ := gpt2.LayerNormBwd(dln2, tp.x2, t, d, blk.LN2.W, tp.ln2Mean, tp.ln2Rstd)
@@ -166,6 +169,9 @@ func (m *Model) forwardBackward(tokens []int) (float32, []float32) {
 		datt := gpt2.MatMul(dproj, t, d, projT, d, d)
 		dqkv := tp.attnCache.Backward(datt)
 		attnWT := gpt2.Transpose(blk.AttnW, d, 3*d)
+		if m.useQ {
+			attnWT = gpt2.Transpose(m.qAttn[li].Dequant(), d, 3*d)
+		}
 		dln1 := gpt2.MatMul(dqkv, t, 3*d, attnWT, 3*d, d)
 		addVec(dln1, m.Attn[li].backward(tp.ln1, dqkv, t, scale))
 		dxb, _, _ := gpt2.LayerNormBwd(dln1, tp.x, t, d, blk.LN1.W, tp.ln1Mean, tp.ln1Rstd)

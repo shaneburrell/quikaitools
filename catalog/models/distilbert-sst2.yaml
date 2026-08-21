@@ -4,11 +4,11 @@ task: classify
 formats: [onnx]
 license: apache-2.0
 source: https://huggingface.co/KnightsAnalytics/distilbert-base-uncased-finetuned-sst-2-english
-notes: Hugot's documented sentiment pipeline. Good first ONNX smoke test on every machine.
+notes: Catalog target for Hugot classify. No quikaitools classify CLI yet — marked untested until ORT/Hugot is linked.
 machines:
-  v100: works
-  halo: cpu_only
-  mac: works
+  v100: untested
+  halo: untested
+  mac: untested
 engine:
   v100: hugot-ort-cuda
   halo: hugot-go

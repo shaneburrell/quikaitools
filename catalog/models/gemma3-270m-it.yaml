@@ -4,11 +4,11 @@ task: generate
 formats: [onnx, gguf]
 license: gemma
 source: https://huggingface.co/onnx-community/gemma-3-270m-it-ONNX
-notes: Small enough to exercise GoMLX ONNX generation and llama.cpp GGUF. Not a production LLM.
+notes: "generate --gguf needs a local llama-cli (QUIKAITOOLS_LLAMA). No chat template yet. Marked untested until machine smoke."
 machines:
-  v100: works
-  halo: works
-  mac: works
+  v100: untested
+  halo: untested
+  mac: untested
 engine:
   v100: llamacpp-cuda
   halo: llamacpp-vulkan

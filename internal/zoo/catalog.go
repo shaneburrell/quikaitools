@@ -141,9 +141,14 @@ func (c Catalog) Filter(task, machine string) []Model {
 		if task != "" && strings.ToLower(m.Task) != task {
 			continue
 		}
-		if machine != "" && machine != "cpu" {
+		if machine != "" {
 			st, ok := m.Machines[machine]
-			if !ok || st == StatusWont {
+			if machine == "cpu" {
+				// cpu column: include unless explicitly wont
+				if ok && st == StatusWont {
+					continue
+				}
+			} else if !ok || st == StatusWont {
 				continue
 			}
 		}

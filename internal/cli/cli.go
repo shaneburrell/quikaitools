@@ -108,6 +108,10 @@ func cmdDoctor(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "infer_gguf:       %s\n", p.InferGGUF)
 	fmt.Fprintf(stdout, "mixed_precision:  %s\n", p.MixedPrecision)
 	fmt.Fprintf(stdout, "notes:            %s\n", p.Notes)
+	fmt.Fprintln(stdout, "binding:          Layer A labels — train is portable Go; ONNX needs Hugot/ORT; GGUF needs llama-cli")
+	if p.MixedPrecision == "fp16" {
+		fmt.Fprintln(stdout, "warning:          mixed_precision=fp16 is reserved; Go trainer compute is still FP32")
+	}
 	if p.Kind == backend.KindCPU {
 		fmt.Fprintln(stdout, "\nwarning: landed on CPU. If this is a V100/Halo/Mac box, install the GPU SDK and re-run.")
 	}

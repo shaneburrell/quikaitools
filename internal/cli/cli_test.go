@@ -39,6 +39,12 @@ func TestDoctorProfile(t *testing.T) {
 	if !strings.Contains(out.String(), "gomlx-xla-cuda") {
 		t.Fatalf("doctor: %s", out.String())
 	}
+	if !strings.Contains(out.String(), "binding:") {
+		t.Fatalf("expected binding note: %s", out.String())
+	}
+	if !strings.Contains(out.String(), "FP32") {
+		t.Fatalf("expected fp16 warning: %s", out.String())
+	}
 }
 
 func TestCatalogEmbedded(t *testing.T) {

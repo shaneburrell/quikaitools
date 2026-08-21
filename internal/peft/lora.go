@@ -166,6 +166,18 @@ func (m *Model) ZeroGrad() {
 	}
 }
 
+// ScaleGrads multiplies accumulated LoRA grads by factor (use 1/accum).
+func (m *Model) ScaleGrads(factor float32) {
+	for _, a := range m.adapters() {
+		for i := range a.dA {
+			a.dA[i] *= factor
+		}
+		for i := range a.dB {
+			a.dB[i] *= factor
+		}
+	}
+}
+
 func (m *Model) Step() {
 	for _, a := range m.adapters() {
 		a.adam(m.Cfg.LR, 0.9, 0.999, 1e-8)

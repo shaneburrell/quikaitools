@@ -4,11 +4,11 @@ task: vision-embed
 formats: [onnx]
 license: mit
 source: https://huggingface.co/openai/clip-vit-base-patch32
-notes: First torchvision-gap target. MVP embed --vision uses internal/vision preprocess; CLIP ONNX session when ORT/Hugot is linked.
+notes: "MVP embed --vision runs real preprocess then a labeled stub vector (not CLIP weights). Untested until ORT/Hugot."
 machines:
   v100: untested
-  halo: cpu_only
-  mac: works
+  halo: untested
+  mac: untested
 engine:
   v100: hugot-ort-cuda
   halo: hugot-go

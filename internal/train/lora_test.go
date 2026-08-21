@@ -57,11 +57,13 @@ func TestAccumAdamSteps(t *testing.T) {
 		_ = m.AccumulateLoss(ids, zero)
 		accumN++
 		if accumN >= accum {
+			m.ScaleGrads(1 / float32(accumN))
 			m.Step()
 			accumN = 0
 		}
 	}
 	if accumN > 0 {
+		m.ScaleGrads(1 / float32(accumN))
 		m.Step()
 	}
 	want := micro / accum

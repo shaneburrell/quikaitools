@@ -73,6 +73,26 @@ func (q QuantLinear) MatMul(x []float32, rows int) []float32 {
 	return out
 }
 
+// Dequant expands packed weights to FP32 [in, out] matching Conv1D layout.
+func (q QuantLinear) Dequant() []float32 {
+	w := make([]float32, q.In*q.Out)
+	for j := 0; j < q.Out; j++ {
+		s := q.Scale[j]
+		for i := 0; i < q.In; i++ {
+			idx := i*q.Out + j
+			byteIdx := idx / 2
+			var u uint8
+			if idx%2 == 0 {
+				u = q.Packed[byteIdx] & 0x0F
+			} else {
+				u = (q.Packed[byteIdx] >> 4) & 0x0F
+			}
+			w[idx] = (float32(int8(u) - 8)) * s
+		}
+	}
+	return w
+}
+
 // EnableQLoRA replaces AttnW/FcW matmuls with 4-bit packed weights (base frozen).
 func (m *Model) EnableQLoRA() {
 	m.useQ = true

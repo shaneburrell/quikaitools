@@ -13,10 +13,10 @@ import (
 )
 
 // LlamaBinary names we look for on PATH (or QUIKAITOOLS_LLAMA).
+// Do not include generic names like "main" (PATH hijack on shared boxes).
 var LlamaBinaryCandidates = []string{
 	"llama-cli",
 	"llama-completion",
-	"main",
 }
 
 // LookLlama returns the first llama.cpp binary found.

@@ -110,9 +110,29 @@ func RunLoRA(opt LoRAOptions) (losses []float32, err error) {
 	losses = make([]float32, 0, opt.Steps)
 	var accumLoss float32
 	accumN := 0
+	optSteps := 0
 	recipe := "lora"
 	if opt.QLoRA {
 		recipe = "qlora"
+	}
+	syncAndMaybeCkpt := func(global int, loss float32) error {
+		if accumN == 0 {
+			return nil
+		}
+		m.ScaleGrads(1 / float32(accumN))
+		m.Step()
+		losses = append(losses, accumLoss/float32(accumN))
+		optSteps++
+		accumLoss = 0
+		accumN = 0
+		if opt.OutDir != "" && job.CheckpointEvery > 0 && optSteps%job.CheckpointEvery == 0 {
+			ckpt := filepath.Join(opt.OutDir, fmt.Sprintf("step-%d", global))
+			if err := m.Save(ckpt); err != nil {
+				return err
+			}
+			_ = dist.SaveCheckpoint(ckpt, dist.CheckpointMeta{Step: global, Loss: loss, Recipe: recipe, Rank: opt.Rank})
+		}
+		return nil
 	}
 	for step := 0; step < opt.Steps; step++ {
 		off := ((startStep + step) * 3) % (len(ids) - seq + 1)
@@ -121,27 +141,21 @@ func RunLoRA(opt LoRAOptions) (losses []float32, err error) {
 		loss := m.AccumulateLoss(batch, zeroFirst)
 		accumLoss += loss
 		accumN++
-		if accumN >= job.AccumSteps {
-			m.Step()
-			losses = append(losses, accumLoss/float32(accumN))
-			accumLoss = 0
-			accumN = 0
-		}
 		global := startStep + step + 1
-		if opt.OutDir != "" && job.CheckpointEvery > 0 && global%job.CheckpointEvery == 0 {
-			ckpt := filepath.Join(opt.OutDir, fmt.Sprintf("step-%d", global))
-			if err := m.Save(ckpt); err != nil {
+		if accumN >= job.AccumSteps {
+			if err := syncAndMaybeCkpt(global, loss); err != nil {
 				return losses, err
 			}
-			_ = dist.SaveCheckpoint(ckpt, dist.CheckpointMeta{Step: global, Loss: loss, Recipe: recipe, Rank: opt.Rank})
 		}
 		if opt.EvalEvery > 0 && (step+1)%opt.EvalEvery == 0 {
 			_ = m.ForwardLogits(batch) // smoke eval forward
 		}
 	}
 	if accumN > 0 {
-		m.Step()
-		losses = append(losses, accumLoss/float32(accumN))
+		global := startStep + opt.Steps
+		if err := syncAndMaybeCkpt(global, accumLoss/float32(accumN)); err != nil {
+			return losses, err
+		}
 	}
 	if opt.OutDir != "" {
 		if err := m.Save(opt.OutDir); err != nil {

@@ -37,4 +37,8 @@ func TestQuantizeRoundTripShape(t *testing.T) {
 	if len(y) != 24 {
 		t.Fatalf("len=%d", len(y))
 	}
+	dq := q.Dequant()
+	if len(dq) != 4*12 {
+		t.Fatalf("dequant len=%d", len(dq))
+	}
 }

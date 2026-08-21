@@ -4,11 +4,11 @@ task: token-classify
 formats: [onnx]
 license: mit
 source: https://huggingface.co/dslim/bert-base-NER
-notes: GoMLX ships an ONNX-converted NER demo. Token classification, not generation.
+notes: Catalog target only. No token-classify CLI yet — untested until Hugot/ORT is linked.
 machines:
-  v100: works
-  halo: cpu_only
-  mac: works
+  v100: untested
+  halo: untested
+  mac: untested
 engine:
   v100: hugot-ort-cuda
   halo: hugot-go
