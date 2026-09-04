@@ -9,10 +9,10 @@
 - `internal/vision`: decode PNG/JPEG, resize, center-crop, ImageNet normalize, CHW float32
 - `internal/audio`: WAV PCM16, mono, resample, log-mel
 - CLI:
-  - `quikaitools embed --vision --model DIR --image FILE`
-  - `quikaitools transcribe --model DIR --audio FILE`
+  - `quikaitools embed --vision --model DIR --image FILE [--normalize imagenet|clip] [--allow-stub]`
+  - `quikaitools transcribe --model DIR --audio FILE [--allow-stub]`
 
-Full CLIP/Whisper ONNX sessions land when Hugot/ORT is linked. Until then, `embed --vision` / `transcribe` run **real preprocess** (`internal/vision`, `internal/audio`) and return clearly labeled stub vectors/transcripts (`vision-gap-stub`, `whisper-mel-stub`, `onnx-stub-*`) so the CLI path is exerciseable on Mac without CGO.
+`--normalize` picks the RGB mean/std preset (`imagenet` default, `clip` for CLIP checkpoints; `vision.ParseNormalization`). `--allow-stub` defaults to true (today's placeholder engines). `--allow-stub=false` sets `StrictStub` and fails closed. Full CLIP/Whisper ONNX sessions land when Hugot/ORT is linked. Until then, `embed --vision` / `transcribe` run **real preprocess** (`internal/vision`, `internal/audio`) and return clearly labeled stub vectors/transcripts (`vision-gap-stub`, `whisper-mel-stub`, `onnx-stub-*`) so the CLI path is exerciseable on Mac without CGO.
 
 ## Fixtures
 

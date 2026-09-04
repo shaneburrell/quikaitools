@@ -3,17 +3,24 @@ package infer
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/shaneburrell/quikaitools/internal/backend"
 )
 
 // LlamaBinary names we look for on PATH (or QUIKAITOOLS_LLAMA).
 // Do not include generic names like "main" (PATH hijack on shared boxes).
+//
+// Non-goal: llama-server (the HTTP daemon) is documented here only. This
+// package never execs llama-server; generation is one-shot via llama-cli /
+// llama-completion (or QUIKAITOOLS_LLAMA).
 var LlamaBinaryCandidates = []string{
 	"llama-cli",
 	"llama-completion",
@@ -85,6 +92,8 @@ type GenerateGGUFOptions struct {
 	Prompt  string
 	Tokens  int
 	Profile backend.Profile
+	// Timeout bounds the llama.cpp process. Zero means 5 minutes.
+	Timeout time.Duration
 }
 
 // GenerateGGUF runs llama-cli (or QUIKAITOOLS_LLAMA) against a .gguf file.
@@ -106,17 +115,29 @@ func GenerateGGUF(opt GenerateGGUFOptions) (string, error) {
 	if prompt == "" {
 		prompt = "Hello"
 	}
+	timeout := opt.Timeout
+	if timeout <= 0 {
+		timeout = 5 * time.Minute
+	}
 	args := []string{"-m", opt.Model, "-n", fmt.Sprintf("%d", opt.Tokens), "-p", prompt, "--no-display-prompt"}
 	// ngl for GPU offload when available
 	switch opt.Profile.Kind {
 	case backend.KindMac, backend.KindV100, backend.KindCUDA, backend.KindHalo:
 		args = append(args, "-ngl", "99")
 	}
-	cmd := exec.Command(bin, args...)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, bin, args...)
+	// After the context kills the process, do not wait forever on children
+	// that still hold the stdout/stderr pipes open.
+	cmd.WaitDelay = 2 * time.Second
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return "", fmt.Errorf("infer: llama.cpp timed out after %s", timeout)
+		}
 		return "", fmt.Errorf("llama.cpp: %w\n%s", err, strings.TrimSpace(stderr.String()))
 	}
 	out := strings.TrimSpace(stdout.String())
@@ -140,7 +161,7 @@ func FindGGUF(dir string) (string, error) {
 		}
 		return nil
 	})
-	if err != nil && err != filepath.SkipAll {
+	if err != nil && !errors.Is(err, filepath.SkipAll) {
 		return "", err
 	}
 	if found == "" {

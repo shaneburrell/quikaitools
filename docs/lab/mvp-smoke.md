@@ -11,14 +11,21 @@ Profile: Apple Silicon → `doctor` reports `mac`, `infer_gguf=llamacpp-metal`, 
 | doctor | `./bin/quikaitools doctor --profile auto` | expect `mac` |
 | doctor strict | `./bin/quikaitools doctor --strict` | ok if `llama-cli` (or `QUIKAITOOLS_LLAMA`) on PATH; else prints install hint and exits 1 |
 | pull catalog id | `./bin/quikaitools pull tiny-random-gpt2` | resolves to `hf-internal-testing/tiny-random-gpt2` |
-| train lora | `./bin/quikaitools train lora --model ~/.cache/quikaitools/models/hf-internal-testing/tiny-random-gpt2 --data testdata/fixtures/stories.txt --steps 20 --rank 4 --accum 2 --out testdata/artifacts/adapter-lora --profile mac` | loss finite; adapter + `meta.json` |
+| train lora | `./bin/quikaitools train lora --model ~/.cache/quikaitools/models/hf-internal-testing/tiny-random-gpt2 --data testdata/fixtures/stories.txt --steps 20 --rank 4 --accum 2 --seq 32 --seed 1 --out testdata/artifacts/adapter-lora --profile mac` | loss finite; adapter + `meta.json` |
 | train resume | `./bin/quikaitools train lora --model … --data … --steps 5 --resume testdata/artifacts/adapter-lora --out testdata/artifacts/adapter-lora-r2` | resumes from adapter |
-| generate + adapter | `./bin/quikaitools generate --model … --adapter testdata/artifacts/adapter-lora --prompt "Once upon" --tokens 8` | prints tokens (train→use) |
+| generate + adapter | `./bin/quikaitools generate --model … --adapter testdata/artifacts/adapter-lora --prompt "Once upon" --tokens 8 --temperature 0.8 --seed 1` | prints tokens (train→use) |
 | train qlora | `./bin/quikaitools train qlora --model … --data … --steps 10 --out testdata/artifacts/adapter-qlora` | 4-bit frozen base + LoRA; loss finite |
 | embed text | `./bin/quikaitools embed --model … --text "hello world"` | `engine=bag-of-wte` on GPT-2 folders; ONNX catalogs stay stub until ORT |
 | embed vision | `./bin/quikaitools embed --vision --model . --image testdata/fixtures/red.png` | real preprocess + labeled stub vector |
 | transcribe | `./bin/quikaitools transcribe --model . --audio testdata/fixtures/tone.wav` | real mel + labeled stub transcript |
-| generate GGUF | `./bin/quikaitools generate --gguf PATH/to/model.gguf --prompt "Hi" --tokens 16` | requires llama.cpp Metal binary |
+| generate GGUF | `./bin/quikaitools generate --gguf PATH/to/model.gguf --prompt "Hi" --tokens 16 --timeout 30s` | requires llama.cpp Metal binary |
+| export merge | `./bin/quikaitools export merge --model … --adapter testdata/artifacts/adapter-lora --out testdata/artifacts/merged` | untested |
+| export gguf | `./bin/quikaitools export gguf --model … --out testdata/artifacts/model.gguf` | untested (SKIP when converter missing) |
+| export modelfile | `./bin/quikaitools export modelfile --gguf FILE --out testdata/artifacts/Modelfile` | untested (`--force` overwrites) |
+| validate-sft | `./bin/quikaitools validate-sft --path FILE.jsonl` | untested |
+| generate ChatML | `./bin/quikaitools generate --model … --template chatml --messages '[{"role":"user","content":"Hi"}]'` | untested |
+
+v0.4 rows (`export`, `validate-sft`, ChatML `generate`) are **untested** on Mac — README does not claim Mac e2e for them.
 
 CI stays CPU-only (`go test ./...`); Hub/Metal runs are local. Artifacts under `testdata/artifacts/` are gitignored.
 

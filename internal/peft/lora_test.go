@@ -27,3 +27,16 @@ func TestWrapCounts(t *testing.T) {
 		t.Fatalf("params %d", m.TrainableParams())
 	}
 }
+
+func TestWrapSeedZeroMatchesWrap(t *testing.T) {
+	base := gpt2.NewRandom(gpt2.Config{NEmbd: 8, NHead: 2, NLayer: 2, NPositions: 16, VocabSize: 16, NInner: 16}, 2)
+	a := Wrap(base, Config{Rank: 2, Alpha: 4})
+	b := WrapSeeded(base, Config{Rank: 2, Alpha: 4}, 0)
+	for i := range a.Attn {
+		for j := range a.Attn[i].A {
+			if a.Attn[i].A[j] != b.Attn[i].A[j] {
+				t.Fatal("seed 0 must match Wrap")
+			}
+		}
+	}
+}

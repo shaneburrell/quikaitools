@@ -4,7 +4,7 @@ COVER_PKG := ./internal/...
 COVER_MIN ?= 70
 ARTIFACTS := testdata/artifacts
 
-.PHONY: all build fmt vet test test-race cover bench tidy check clean
+.PHONY: all build fmt fmt-fix lint tidy-check vet test test-race cover bench tidy check clean
 
 all: check build
 
@@ -13,7 +13,16 @@ build:
 	$(GO) build -o $(BIN) ./cmd/quikaitools
 
 fmt:
+	@test -z "$$(gofmt -l .)" || (gofmt -l . && echo "run make fmt-fix" && exit 1)
+
+fmt-fix:
 	$(GO) fmt ./...
+
+lint:
+	golangci-lint run ./...
+
+tidy-check:
+	$(GO) mod tidy -diff
 
 vet:
 	$(GO) vet ./...
@@ -40,7 +49,7 @@ bench:
 tidy:
 	$(GO) mod tidy
 
-check: tidy fmt vet test-race cover
+check: tidy-check fmt vet lint test-race cover
 
 clean:
 	rm -rf bin dist testdata/artifacts

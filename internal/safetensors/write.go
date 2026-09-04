@@ -1,6 +1,7 @@
 package safetensors
 
 import (
+	"bytes"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -10,13 +11,23 @@ import (
 )
 
 // WriteFile writes F32 tensors in safetensors format.
+// The JSON header is padded with spaces to an 8-byte boundary.
 func WriteFile(path string, tensors map[string]Tensor) error {
+	return WriteFileMeta(path, tensors, nil)
+}
+
+// WriteFileMeta is WriteFile plus optional __metadata__ (e.g. {"format":"pt"}).
+// The JSON header is padded with spaces so the tensor payload starts at a multiple of 8.
+func WriteFileMeta(path string, tensors map[string]Tensor, meta map[string]string) error {
 	names := make([]string, 0, len(tensors))
 	for n := range tensors {
 		names = append(names, n)
 	}
 	sort.Strings(names)
-	hdr := map[string]headerEntry{}
+	hdr := make(map[string]any, len(names)+1)
+	if len(meta) > 0 {
+		hdr["__metadata__"] = meta
+	}
 	var payload []byte
 	off := 0
 	for _, name := range names {
@@ -33,6 +44,9 @@ func WriteFile(path string, tensors map[string]Tensor) error {
 	hb, err := json.Marshal(hdr)
 	if err != nil {
 		return err
+	}
+	if pad := (8 - len(hb)%8) % 8; pad > 0 {
+		hb = append(hb, bytes.Repeat([]byte{' '}, pad)...)
 	}
 	out := make([]byte, 8+len(hb)+len(payload))
 	binary.LittleEndian.PutUint64(out[:8], uint64(len(hb)))

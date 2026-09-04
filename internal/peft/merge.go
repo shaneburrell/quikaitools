@@ -26,7 +26,7 @@ func mergeLinear(w []float32, a *Adapter, scale float32) {
 	}
 }
 
-// LoadAndMerge loads adapters and merges into a copy-friendly base (mutates base).
+// LoadAndMerge loads adapters (legacy adapter.json or HF PEFT files) and merges into base.
 func LoadAndMerge(base *gpt2.Model, adapterDir string) error {
 	m, err := Load(base, adapterDir)
 	if err != nil {

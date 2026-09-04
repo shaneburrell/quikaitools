@@ -10,7 +10,9 @@ import (
 func TestSaveLoadGenerate(t *testing.T) {
 	base := gpt2.NewRandom(gpt2.Config{NEmbd: 8, NHead: 2, NLayer: 1, NPositions: 16, VocabSize: 16, NInner: 16}, 7)
 	m := Wrap(base, Config{Rank: 2, Alpha: 4, LR: 1e-2})
-	_ = m.StepLoss([]int{1, 2, 3, 4, 5, 6})
+	if _, err := m.StepLoss([]int{1, 2, 3, 4, 5, 6}); err != nil {
+		t.Fatal(err)
+	}
 	dir := t.TempDir()
 	if err := m.Save(dir); err != nil {
 		t.Fatal(err)
@@ -33,7 +35,9 @@ func TestQLoRASaveLoadEnablesQuant(t *testing.T) {
 	base := gpt2.NewRandom(gpt2.Config{NEmbd: 8, NHead: 2, NLayer: 1, NPositions: 16, VocabSize: 16, NInner: 16}, 7)
 	m := Wrap(base, Config{Rank: 2, Alpha: 4, LR: 1e-2})
 	m.EnableQLoRA()
-	_ = m.StepLoss([]int{1, 2, 3, 4, 5, 6})
+	if _, err := m.StepLoss([]int{1, 2, 3, 4, 5, 6}); err != nil {
+		t.Fatal(err)
+	}
 	dir := t.TempDir()
 	if err := m.Save(dir); err != nil {
 		t.Fatal(err)

@@ -3,8 +3,11 @@ package train
 import (
 	"fmt"
 	"math"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/shaneburrell/quikaitools/internal/backend"
 	"github.com/shaneburrell/quikaitools/internal/gpt2"
 	"github.com/shaneburrell/quikaitools/internal/peft"
 	"github.com/shaneburrell/quikaitools/internal/testart"
@@ -54,7 +57,9 @@ func TestAccumAdamSteps(t *testing.T) {
 	var accumN int
 	for step := 0; step < micro; step++ {
 		zero := accumN == 0
-		_ = m.AccumulateLoss(ids, zero)
+		if _, err := m.AccumulateLoss(ids, zero); err != nil {
+			t.Fatal(err)
+		}
 		accumN++
 		if accumN >= accum {
 			m.ScaleGrads(1 / float32(accumN))
@@ -69,5 +74,50 @@ func TestAccumAdamSteps(t *testing.T) {
 	want := micro / accum
 	if m.AdamSteps() != want {
 		t.Fatalf("AdamSteps=%d want %d", m.AdamSteps(), want)
+	}
+}
+
+func TestRunLoRASeedDeterministic(t *testing.T) {
+	dir := t.TempDir()
+	base := gpt2.NewRandom(gpt2.Config{NEmbd: 8, NHead: 2, NLayer: 1, NPositions: 32, VocabSize: 32, NInner: 16}, 3)
+	if err := gpt2.WriteDir(dir, base); err != nil {
+		t.Fatal(err)
+	}
+	data := filepath.Join(dir, "data.txt")
+	if err := os.WriteFile(data, []byte("abcdefghijklmnopqrstuvwxyz abcdefghijklmnopqrstuvwxyz"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run := func(seed int64) []float32 {
+		t.Helper()
+		losses, err := RunLoRA(LoRAOptions{
+			ModelDir: dir, DataPath: data,
+			Steps: 6, SeqLen: 8, Rank: 2, Alpha: 4, LR: 1e-2,
+			Seed: seed, Profile: backend.KindCPU,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return losses
+	}
+	a := run(42)
+	b := run(42)
+	if len(a) != len(b) {
+		t.Fatalf("len %d vs %d", len(a), len(b))
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			t.Fatalf("same seed step %d: %v vs %v", i, a[i], b[i])
+		}
+	}
+	c := run(99)
+	same := true
+	for i := range a {
+		if a[i] != c[i] {
+			same = false
+			break
+		}
+	}
+	if same {
+		t.Fatal("different seeds produced identical losses")
 	}
 }

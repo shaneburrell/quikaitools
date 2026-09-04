@@ -59,7 +59,11 @@ func SaveCheckpoint(dir string, meta CheckpointMeta) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "meta.json"), b, 0o644)
+	tmp := filepath.Join(dir, "meta.json.tmp")
+	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, filepath.Join(dir, "meta.json"))
 }
 
 // LoadCheckpointMeta reads meta.json if present.
@@ -83,9 +87,13 @@ func (j Job) Validate() error {
 	if j.ShardMode != "" && j.ShardMode != ShardModeNone {
 		return fmt.Errorf("dist: shard mode %q not supported in MVP (only none)", j.ShardMode)
 	}
+	return nil
+}
+
+// Warnings returns non-fatal job notes (the library does not print them).
+func (j Job) Warnings() []string {
 	if j.FP16 && j.Profile.Kind != backend.KindV100 && j.Profile.Kind != backend.KindCUDA {
-		// allow flag but warn via notes — Mac/Halo stay FP32 in trainer
-		return nil
+		return []string{"fp16 requested on non-CUDA/V100 profile; trainer stays FP32"}
 	}
 	return nil
 }

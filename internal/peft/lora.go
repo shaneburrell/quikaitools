@@ -3,12 +3,14 @@ package peft
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
 	"path/filepath"
 
 	"github.com/shaneburrell/quikaitools/internal/gpt2"
+	"github.com/shaneburrell/quikaitools/internal/safetensors"
 )
 
 // Config is a PEFT-style LoRA setup.
@@ -26,6 +28,9 @@ func (c Config) Scale() float32 {
 }
 
 // Adapter holds A [in,r] and B [r,out] for one linear.
+// GPT-2 Conv1D is stored [in, out] (y = x @ W). Hugging Face PEFT stores the
+// same LoRA as nn.Linear: lora_A [r, in] and lora_B [out, r] with
+// fan_in_fan_out=true, so Save/Load transpose both matrices.
 type Adapter struct {
 	Name           string
 	In, Out, Rank  int
@@ -48,6 +53,12 @@ type Model struct {
 
 // Wrap attaches zero-B LoRA (A small random) so the first step is identity.
 func Wrap(base *gpt2.Model, cfg Config) *Model {
+	return WrapSeeded(base, cfg, 0)
+}
+
+// WrapSeeded is Wrap with a seed mixed into LoRA A initialization.
+// Seed 0 uses the historical name-hash init (identical to Wrap).
+func WrapSeeded(base *gpt2.Model, cfg Config, seed int64) *Model {
 	if cfg.Rank <= 0 {
 		cfg.Rank = 4
 	}
@@ -60,13 +71,17 @@ func Wrap(base *gpt2.Model, cfg Config) *Model {
 	m := &Model{Base: base, Cfg: cfg}
 	d, inn := base.Cfg.NEmbd, base.Cfg.Inner()
 	for i := range base.Blocks {
-		m.Attn = append(m.Attn, newAdapter(fmt.Sprintf("h.%d.attn.c_attn", i), d, 3*d, cfg.Rank))
-		m.FC = append(m.FC, newAdapter(fmt.Sprintf("h.%d.mlp.c_fc", i), d, inn, cfg.Rank))
+		m.Attn = append(m.Attn, newAdapterSeeded(fmt.Sprintf("h.%d.attn.c_attn", i), d, 3*d, cfg.Rank, seed))
+		m.FC = append(m.FC, newAdapterSeeded(fmt.Sprintf("h.%d.mlp.c_fc", i), d, inn, cfg.Rank, seed))
 	}
 	return m
 }
 
 func newAdapter(name string, in, out, r int) *Adapter {
+	return newAdapterSeeded(name, in, out, r, 0)
+}
+
+func newAdapterSeeded(name string, in, out, r int, seed int64) *Adapter {
 	a := &Adapter{
 		Name: name, In: in, Out: out, Rank: r,
 		A: make([]float32, in*r), B: make([]float32, r*out),
@@ -74,9 +89,10 @@ func newAdapter(name string, in, out, r int) *Adapter {
 		mA: make([]float32, in*r), vA: make([]float32, in*r),
 		mB: make([]float32, r*out), vB: make([]float32, r*out),
 	}
-	// Kaiming-ish A, zeros B (standard LoRA init).
+	// Kaiming-ish A, zeros B (standard LoRA init). Seed 0 is a no-op XOR.
 	scale := float32(1 / math.Sqrt(float64(in)))
 	s := uint64(len(name)*997 + in + out)
+	s ^= uint64(seed)
 	for i := range a.A {
 		s ^= s << 13
 		s ^= s >> 7
@@ -184,7 +200,8 @@ func (m *Model) Step() {
 	}
 }
 
-// Save writes adapter.json (tiny, human-readable).
+// Save writes adapter.json, optimizer.json, and Hugging Face PEFT files
+// (adapter_config.json + adapter_model.safetensors).
 func (m *Model) Save(dir string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -209,10 +226,143 @@ func (m *Model) Save(dir string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "adapter.json"), body, 0o644)
+	if err := os.WriteFile(filepath.Join(dir, "adapter.json"), body, 0o644); err != nil {
+		return err
+	}
+	if err := m.saveOptimizer(dir); err != nil {
+		return err
+	}
+	return m.saveHFPEFT(dir)
+}
+
+// hfAdapterConfig is Hugging Face PEFT adapter_config.json (LoRA subset).
+type hfAdapterConfig struct {
+	PeftType            string   `json:"peft_type"`
+	TaskType            string   `json:"task_type"`
+	BaseModelNameOrPath string   `json:"base_model_name_or_path"`
+	R                   int      `json:"r"`
+	LoraAlpha           float32  `json:"lora_alpha"`
+	LoraDropout         float64  `json:"lora_dropout"`
+	Bias                string   `json:"bias"`
+	FanInFanOut         bool     `json:"fan_in_fan_out"`
+	TargetModules       []string `json:"target_modules"`
+	InferenceMode       bool     `json:"inference_mode"`
+}
+
+const hfPEFTPrefix = "base_model.model.transformer."
+
+// saveHFPEFT writes adapter_config.json and adapter_model.safetensors.
+// Internal A is [in, r] and B is [r, out]; PEFT tensors are the transposes
+// [r, in] and [out, r] (nn.Linear + fan_in_fan_out for Conv1D).
+func (m *Model) saveHFPEFT(dir string) error {
+	cfg := hfAdapterConfig{
+		PeftType:            "LORA",
+		TaskType:            "CAUSAL_LM",
+		BaseModelNameOrPath: "", // gpt2.Model has no Name field
+		R:                   m.Cfg.Rank,
+		LoraAlpha:           m.Cfg.Alpha,
+		LoraDropout:         0,
+		Bias:                "none",
+		FanInFanOut:         true,
+		TargetModules:       []string{"c_attn", "c_fc"},
+		InferenceMode:       false,
+	}
+	body, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "adapter_config.json"), body, 0o644); err != nil {
+		return err
+	}
+	tensors := map[string]safetensors.Tensor{}
+	put := func(layer int, module string, a *Adapter) {
+		if a == nil {
+			return
+		}
+		// Transpose [in,r] -> [r,in] and [r,out] -> [out,r].
+		aT := transpose(a.A, a.In, a.Rank)
+		bT := transpose(a.B, a.Rank, a.Out)
+		keyA := fmt.Sprintf(hfPEFTPrefix+"h.%d.%s.lora_A.weight", layer, module)
+		keyB := fmt.Sprintf(hfPEFTPrefix+"h.%d.%s.lora_B.weight", layer, module)
+		tensors[keyA] = safetensors.Tensor{Name: keyA, Dtype: "F32", Shape: []int{a.Rank, a.In}, Data: aT}
+		tensors[keyB] = safetensors.Tensor{Name: keyB, Dtype: "F32", Shape: []int{a.Out, a.Rank}, Data: bT}
+	}
+	for i, a := range m.Attn {
+		put(i, "attn.c_attn", a)
+	}
+	for i, a := range m.FC {
+		put(i, "mlp.c_fc", a)
+	}
+	return safetensors.WriteFileMeta(filepath.Join(dir, "adapter_model.safetensors"), tensors, map[string]string{"format": "pt"})
+}
+
+type optimizerDump struct {
+	Name string    `json:"name"`
+	MA   []float32 `json:"m_a"`
+	VA   []float32 `json:"v_a"`
+	MB   []float32 `json:"m_b"`
+	VB   []float32 `json:"v_b"`
+	Step int       `json:"step"`
+}
+
+func (m *Model) saveOptimizer(dir string) error {
+	var list []optimizerDump
+	for _, a := range m.adapters() {
+		list = append(list, optimizerDump{a.Name, a.mA, a.vA, a.mB, a.vB, a.Step})
+	}
+	body, err := json.MarshalIndent(struct {
+		Adapters []optimizerDump `json:"adapters"`
+	}{list}, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "optimizer.json"), body, 0o644)
+}
+
+func (m *Model) restoreOptimizer(dir string) error {
+	raw, err := os.ReadFile(filepath.Join(dir, "optimizer.json"))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	var file struct {
+		Adapters []optimizerDump `json:"adapters"`
+	}
+	if err := json.Unmarshal(raw, &file); err != nil {
+		return err
+	}
+	byName := map[string]*Adapter{}
+	for _, a := range m.adapters() {
+		byName[a.Name] = a
+	}
+	for _, d := range file.Adapters {
+		a, ok := byName[d.Name]
+		if !ok {
+			continue
+		}
+		if len(d.MA) == len(a.mA) {
+			copy(a.mA, d.MA)
+		}
+		if len(d.VA) == len(a.vA) {
+			copy(a.vA, d.VA)
+		}
+		if len(d.MB) == len(a.mB) {
+			copy(a.mB, d.MB)
+		}
+		if len(d.VB) == len(a.vB) {
+			copy(a.vB, d.VB)
+		}
+		a.Step = d.Step
+	}
+	return nil
 }
 
 func matmul(a []float32, aR, aC int, b []float32, bR, bC int) []float32 {
+	if aC != bR {
+		panic("peft: matmul shape")
+	}
 	out := make([]float32, aR*bC)
 	for i := 0; i < aR; i++ {
 		for k := 0; k < aC; k++ {

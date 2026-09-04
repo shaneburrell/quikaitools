@@ -71,10 +71,22 @@ func LoadDir(dir string) (*Model, error) {
 		return nil, err
 	}
 	m := &Model{Cfg: cfg}
-	m.WTE = must(tensors, "transformer.wte.weight").Data
-	m.WPE = must(tensors, "transformer.wpe.weight").Data
-	m.LNF.W = must(tensors, "transformer.ln_f.weight").Data
-	m.LNF.B = must(tensors, "transformer.ln_f.bias").Data
+	var loadErr error
+	tensor := func(name string) []float32 {
+		if loadErr != nil {
+			return nil
+		}
+		t, ok := tensors[name]
+		if !ok {
+			loadErr = fmt.Errorf("gpt2: missing tensor %q in %s", name, dir)
+			return nil
+		}
+		return t.Data
+	}
+	m.WTE = tensor("transformer.wte.weight")
+	m.WPE = tensor("transformer.wpe.weight")
+	m.LNF.W = tensor("transformer.ln_f.weight")
+	m.LNF.B = tensor("transformer.ln_f.bias")
 	if fc := tensors["transformer.h.0.mlp.c_fc.weight"]; len(fc.Shape) == 2 {
 		m.Cfg.NInner = fc.Shape[1]
 	}
@@ -82,28 +94,23 @@ func LoadDir(dir string) (*Model, error) {
 	for i := 0; i < cfg.NLayer; i++ {
 		p := fmt.Sprintf("transformer.h.%d.", i)
 		b := &m.Blocks[i]
-		b.LN1.W = must(tensors, p+"ln_1.weight").Data
-		b.LN1.B = must(tensors, p+"ln_1.bias").Data
-		b.LN2.W = must(tensors, p+"ln_2.weight").Data
-		b.LN2.B = must(tensors, p+"ln_2.bias").Data
-		b.AttnW = must(tensors, p+"attn.c_attn.weight").Data
-		b.AttnB = must(tensors, p+"attn.c_attn.bias").Data
-		b.ProjW = must(tensors, p+"attn.c_proj.weight").Data
-		b.ProjB = must(tensors, p+"attn.c_proj.bias").Data
-		b.FcW = must(tensors, p+"mlp.c_fc.weight").Data
-		b.FcB = must(tensors, p+"mlp.c_fc.bias").Data
-		b.FcProjW = must(tensors, p+"mlp.c_proj.weight").Data
-		b.FcProjB = must(tensors, p+"mlp.c_proj.bias").Data
+		b.LN1.W = tensor(p + "ln_1.weight")
+		b.LN1.B = tensor(p + "ln_1.bias")
+		b.LN2.W = tensor(p + "ln_2.weight")
+		b.LN2.B = tensor(p + "ln_2.bias")
+		b.AttnW = tensor(p + "attn.c_attn.weight")
+		b.AttnB = tensor(p + "attn.c_attn.bias")
+		b.ProjW = tensor(p + "attn.c_proj.weight")
+		b.ProjB = tensor(p + "attn.c_proj.bias")
+		b.FcW = tensor(p + "mlp.c_fc.weight")
+		b.FcB = tensor(p + "mlp.c_fc.bias")
+		b.FcProjW = tensor(p + "mlp.c_proj.weight")
+		b.FcProjB = tensor(p + "mlp.c_proj.bias")
+	}
+	if loadErr != nil {
+		return nil, loadErr
 	}
 	return m, nil
-}
-
-func must(m map[string]safetensors.Tensor, name string) safetensors.Tensor {
-	t, ok := m[name]
-	if !ok {
-		panic("missing tensor " + name)
-	}
-	return t
 }
 
 // NewRandom is a tiny randomly-initialized model for tests (no Hub).

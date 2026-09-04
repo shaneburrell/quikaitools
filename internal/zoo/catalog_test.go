@@ -3,6 +3,7 @@ package zoo
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"testing/fstest"
 )
@@ -123,5 +124,55 @@ func TestGetAndFilesAndSource(t *testing.T) {
 	gguf := FilesForModel(Model{Formats: []string{"gguf"}})
 	if len(gguf) == 0 {
 		t.Fatal("gguf")
+	}
+}
+
+func TestInvalidMachineStatus(t *testing.T) {
+	_, err := parseModel([]byte(`
+id: bad-status
+task: embed
+machines:
+  v100: maybe
+`), "bad.yaml")
+	if err == nil {
+		t.Fatal("expected invalid status")
+	}
+	msg := err.Error()
+	for _, want := range []string{"bad.yaml", "bad-status", "v100", "maybe"} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("error %q should name %q", msg, want)
+		}
+	}
+}
+
+func TestDuplicateModelID(t *testing.T) {
+	dir := t.TempDir()
+	body := "id: same\ntask: embed\n"
+	if err := os.WriteFile(filepath.Join(dir, "a.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadDir(dir); err == nil {
+		t.Fatal("expected duplicate id")
+	} else if !strings.Contains(err.Error(), "same") {
+		t.Fatalf("error should name id: %v", err)
+	}
+}
+
+func TestTaskAliasTranscribeASR(t *testing.T) {
+	cat := Catalog{Models: []Model{{ID: "whisper", Task: "asr"}}}
+	got := cat.Filter("transcribe", "")
+	if len(got) != 1 || got[0].ID != "whisper" {
+		t.Fatalf("transcribe should match asr: %+v", got)
+	}
+	got = cat.Filter("asr", "")
+	if len(got) != 1 || got[0].ID != "whisper" {
+		t.Fatalf("asr should still match: %+v", got)
+	}
+	got = cat.Filter("embed", "")
+	if len(got) != 0 {
+		t.Fatalf("embed should not match asr: %+v", got)
 	}
 }

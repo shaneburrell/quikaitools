@@ -34,18 +34,6 @@ func AddBias(m []float32, rows, cols int, bias []float32) {
 	}
 }
 
-func addInPlace(a, b []float32) {
-	for i := range a {
-		a[i] += b[i]
-	}
-}
-
-func scaleInPlace(a []float32, s float32) {
-	for i := range a {
-		a[i] *= s
-	}
-}
-
 func GELUNew(x float32) float32 {
 	const c = 0.7978845608028654 // sqrt(2/pi)
 	inner := c * (float64(x) + 0.044715*float64(x)*float64(x)*float64(x))

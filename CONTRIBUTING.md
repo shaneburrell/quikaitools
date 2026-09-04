@@ -16,15 +16,21 @@ make build
 
 | Command | Purpose |
 |---------|---------|
-| `make fmt` | `gofmt` |
+| `make fmt` | `gofmt -l` check (fails if any file needs rewrite) |
+| `make fmt-fix` | `gofmt` rewrite |
+| `make lint` | `golangci-lint run ./...` (errcheck, govet, staticcheck, unused, …) |
 | `make vet` | `go vet ./...` |
 | `make test` | Unit tests (also writes doctor/catalog dumps under `testdata/artifacts/`) |
 | `make test-race` | Race detector |
 | `make cover` | Coverage HTML + **70%** gate on `./internal/...` → `testdata/artifacts/` |
 | `make bench` | Benchmarks → `testdata/artifacts/bench.txt` |
-| `make check` | tidy → fmt → vet → race → cover |
+| `make tidy` | `go mod tidy` |
+| `make tidy-check` | `go mod tidy -diff` |
+| `make check` | tidy-check → fmt → vet → lint → race → cover |
 | `make build` | `bin/quikaitools` |
 | `make clean` | Remove `bin/`, `dist/`, `testdata/artifacts/` |
+
+CI (`.github/workflows/ci.yml`) enforces `gofmt -l`, `go mod tidy -diff`, and golangci-lint on Ubuntu/macOS.
 
 Generated coverage, benches, and CLI dumps land in `testdata/artifacts/` (gitignored). See [testdata/README.md](testdata/README.md). Never commit those files, `*.gguf`, or `adapters/`.
 

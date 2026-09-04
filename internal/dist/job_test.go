@@ -40,3 +40,18 @@ func TestValidateAccum(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestWarningsFP16NonCUDA(t *testing.T) {
+	j := Job{AccumSteps: 1, FP16: true, Profile: backend.Profile{Kind: backend.KindMac}}
+	if err := j.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	w := j.Warnings()
+	if len(w) == 0 {
+		t.Fatal("expected fp16 warning")
+	}
+	j2 := Job{AccumSteps: 1, FP16: true, Profile: backend.Profile{Kind: backend.KindCUDA}}
+	if len(j2.Warnings()) != 0 {
+		t.Fatalf("cuda should not warn: %v", j2.Warnings())
+	}
+}
