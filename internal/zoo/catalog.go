@@ -65,12 +65,15 @@ func LoadDir(dir string) (Catalog, error) {
 	}
 	sort.Strings(files)
 	var cat Catalog
+	seen := map[string]string{}
 	for _, path := range files {
 		m, err := loadFile(path)
 		if err != nil {
 			return Catalog{}, err
 		}
-		cat.Models = append(cat.Models, m)
+		if err := addModel(&cat, seen, m, path); err != nil {
+			return Catalog{}, err
+		}
 	}
 	return cat, nil
 }
@@ -95,6 +98,7 @@ func LoadFS(fsys fs.FS) (Catalog, error) {
 	}
 	sort.Strings(files)
 	var cat Catalog
+	seen := map[string]string{}
 	for _, path := range files {
 		b, err := fs.ReadFile(fsys, path)
 		if err != nil {
@@ -104,7 +108,9 @@ func LoadFS(fsys fs.FS) (Catalog, error) {
 		if err != nil {
 			return Catalog{}, err
 		}
-		cat.Models = append(cat.Models, m)
+		if err := addModel(&cat, seen, m, path); err != nil {
+			return Catalog{}, err
+		}
 	}
 	return cat, nil
 }
@@ -128,7 +134,30 @@ func parseModel(b []byte, path string) (Model, error) {
 	if m.Task == "" {
 		return Model{}, fmt.Errorf("%s: missing task", path)
 	}
+	for machine, st := range m.Machines {
+		if !allowedStatus(st) {
+			return Model{}, fmt.Errorf("%s: id %s: machine %q: invalid status %q", path, m.ID, machine, st)
+		}
+	}
 	return m, nil
+}
+
+func allowedStatus(s Status) bool {
+	switch s {
+	case StatusWorks, StatusCPUOnly, StatusUntested, StatusWont:
+		return true
+	default:
+		return false
+	}
+}
+
+func addModel(cat *Catalog, seen map[string]string, m Model, path string) error {
+	if prev, ok := seen[m.ID]; ok {
+		return fmt.Errorf("duplicate model id %q in %s and %s", m.ID, prev, path)
+	}
+	seen[m.ID] = path
+	cat.Models = append(cat.Models, m)
+	return nil
 }
 
 // Filter returns models matching optional task and machine status.
@@ -138,7 +167,7 @@ func (c Catalog) Filter(task, machine string) []Model {
 	machine = strings.TrimSpace(strings.ToLower(machine))
 	var out []Model
 	for _, m := range c.Models {
-		if task != "" && strings.ToLower(m.Task) != task {
+		if task != "" && !taskMatches(task, m.Task) {
 			continue
 		}
 		if machine != "" {
@@ -155,6 +184,14 @@ func (c Catalog) Filter(task, machine string) []Model {
 		out = append(out, m)
 	}
 	return out
+}
+
+func taskMatches(want, have string) bool {
+	have = strings.ToLower(have)
+	if want == have {
+		return true
+	}
+	return (want == "transcribe" && have == "asr") || (want == "asr" && have == "transcribe")
 }
 
 // StatusOn returns the machine status or untested.

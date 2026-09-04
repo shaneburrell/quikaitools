@@ -1,6 +1,7 @@
 package peft
 
 import (
+	"fmt"
 	"math"
 
 	"github.com/shaneburrell/quikaitools/internal/gpt2"
@@ -13,27 +14,36 @@ type blockTape struct {
 }
 
 // StepLoss runs one microbatch and an Adam step (accum=1 convenience).
-func (m *Model) StepLoss(tokens []int) float32 {
+func (m *Model) StepLoss(tokens []int) (float32, error) {
 	if len(tokens) < 2 {
-		return 0
+		return 0, nil
 	}
 	m.ZeroGrad()
-	loss, _ := m.forwardBackward(tokens)
+	loss, err := m.forwardBackward(tokens, nil)
+	if err != nil {
+		return loss, err
+	}
 	m.Step()
-	return loss
+	return loss, nil
 }
 
 // AccumulateLoss runs forward+backward, optionally zeroing grads first.
 // Call Step() after AccumSteps microbatches to apply Adam once.
-func (m *Model) AccumulateLoss(tokens []int, zeroFirst bool) float32 {
+func (m *Model) AccumulateLoss(tokens []int, zeroFirst bool) (float32, error) {
+	return m.AccumulateLossMasked(tokens, nil, zeroFirst)
+}
+
+// AccumulateLossMasked is AccumulateLoss with a next-token loss mask.
+// mask[i+1]==false skips the CE at position i (predicting tokens[i+1]).
+// The loss is the mean over unmasked predictions; if none remain, loss is 0 and no grads are accumulated.
+func (m *Model) AccumulateLossMasked(tokens []int, mask []bool, zeroFirst bool) (float32, error) {
 	if len(tokens) < 2 {
-		return 0
+		return 0, nil
 	}
 	if zeroFirst {
 		m.ZeroGrad()
 	}
-	loss, _ := m.forwardBackward(tokens)
-	return loss
+	return m.forwardBackward(tokens, mask)
 }
 
 // AdamSteps returns the Adam step counter from the first adapter (0 if none).
@@ -45,10 +55,13 @@ func (m *Model) AdamSteps() int {
 	return ads[0].Step
 }
 
-func (m *Model) forwardBackward(tokens []int) (float32, []float32) {
+func (m *Model) forwardBackward(tokens []int, mask []bool) (float32, error) {
 	base := m.Base
 	cfg := base.Cfg
 	t := len(tokens)
+	if cfg.NPositions > 0 && t > cfg.NPositions {
+		return 0, fmt.Errorf("peft: sequence length %d exceeds n_positions %d", t, cfg.NPositions)
+	}
 	d := cfg.NEmbd
 	eps := cfg.LayerNormEps
 	scale := m.Cfg.Scale()
@@ -114,8 +127,11 @@ func (m *Model) forwardBackward(tokens []int) (float32, []float32) {
 
 	var loss float32
 	dLogits := make([]float32, t*cfg.VocabSize)
-	nPred := t - 1
-	for i := 0; i < nPred; i++ {
+	nPred := 0
+	for i := 0; i < t-1; i++ {
+		if mask != nil && (i+1 >= len(mask) || !mask[i+1]) {
+			continue
+		}
 		target := tokens[i+1]
 		if target < 0 || target >= cfg.VocabSize {
 			target = 0
@@ -128,6 +144,10 @@ func (m *Model) forwardBackward(tokens []int) (float32, []float32) {
 		row := dLogits[i*cfg.VocabSize : (i+1)*cfg.VocabSize]
 		copy(row, probs[i*cfg.VocabSize:(i+1)*cfg.VocabSize])
 		row[target] -= 1
+		nPred++
+	}
+	if nPred == 0 {
+		return 0, nil
 	}
 	loss /= float32(nPred)
 	invN := 1 / float32(nPred)
@@ -178,8 +198,7 @@ func (m *Model) forwardBackward(tokens []int) (float32, []float32) {
 		addVec(dxIn, dxb)
 		dx = dxIn
 	}
-	_ = lnfRstd
-	return loss, dx
+	return loss, nil
 }
 
 func addVec(dst, src []float32) {

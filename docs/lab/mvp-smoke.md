@@ -19,6 +19,13 @@ Profile: Apple Silicon → `doctor` reports `mac`, `infer_gguf=llamacpp-metal`, 
 | embed vision | `./bin/quikaitools embed --vision --model . --image testdata/fixtures/red.png` | real preprocess + labeled stub vector |
 | transcribe | `./bin/quikaitools transcribe --model . --audio testdata/fixtures/tone.wav` | real mel + labeled stub transcript |
 | generate GGUF | `./bin/quikaitools generate --gguf PATH/to/model.gguf --prompt "Hi" --tokens 16` | requires llama.cpp Metal binary |
+| export merge | `./bin/quikaitools export merge --model … --adapter testdata/artifacts/adapter-lora --out testdata/artifacts/merged` | untested |
+| export gguf | `./bin/quikaitools export gguf --model … --out testdata/artifacts/model.gguf` | untested (SKIP when converter missing) |
+| export modelfile | `./bin/quikaitools export modelfile --gguf FILE --out testdata/artifacts/Modelfile` | untested |
+| validate-sft | `./bin/quikaitools validate-sft --path FILE.jsonl` | untested |
+| generate ChatML | `./bin/quikaitools generate --model … --template chatml --messages '[{"role":"user","content":"Hi"}]'` | untested |
+
+v0.4 rows (`export`, `validate-sft`, ChatML `generate`) are **untested** on Mac — README does not claim Mac e2e for them.
 
 CI stays CPU-only (`go test ./...`); Hub/Metal runs are local. Artifacts under `testdata/artifacts/` are gitignored.
 

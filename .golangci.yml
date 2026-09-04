@@ -1,0 +1,29 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - unused
+    - errorlint
+    - unparam
+    - gocritic
+    - gosec
+    - misspell
+  settings:
+    gosec:
+      # G204/G301/G304/G306/G115/G703 (subprocess with variable, dir/file
+      # perms, file inclusion via variable, int conversions, path traversal)
+      # are inherent to a CLI that reads user paths and execs local tools.
+      excludes:
+        - G204
+        - G301
+        - G304
+        - G306
+        - G115
+        - G703

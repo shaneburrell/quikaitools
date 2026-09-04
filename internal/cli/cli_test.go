@@ -22,6 +22,13 @@ func TestVersionAndHelp(t *testing.T) {
 		t.Fatalf("version output: %s", out.String())
 	}
 	out.Reset()
+	if code := Main([]string{"quikaitools", "--version"}, &out, &out); code != 0 {
+		t.Fatalf("--version code=%d out=%s", code, out.String())
+	}
+	if !strings.Contains(out.String(), Version) {
+		t.Fatalf("--version output: %s", out.String())
+	}
+	out.Reset()
 	if code := Main([]string{"quikaitools", "help"}, &out, &out); code != 0 {
 		t.Fatalf("help code=%d", code)
 	}
@@ -210,5 +217,79 @@ func TestExportMergeAndValidateSFT(t *testing.T) {
 	code = Main([]string{"quikaitools", "generate", "--model", dir, "--template", "chatml", "--messages", `[{"role":"user","content":"aa"}]`, "--tokens", "2"}, &out, &errb)
 	if code != 0 {
 		t.Fatalf("generate template code=%d err=%s", code, errb.String())
+	}
+}
+
+func TestExportTrailingFlagsNoPanic(t *testing.T) {
+	for _, args := range [][]string{
+		{"quikaitools", "export", "merge", "--model"},
+		{"quikaitools", "export", "gguf", "--out"},
+		{"quikaitools", "export", "modelfile", "--gguf"},
+	} {
+		var out, errb bytes.Buffer
+		code := Main(args, &out, &errb)
+		if code != 2 {
+			t.Fatalf("%v code=%d err=%s", args, code, errb.String())
+		}
+		if !strings.Contains(errb.String(), "needs a value") {
+			t.Fatalf("%v stderr=%s", args, errb.String())
+		}
+	}
+}
+
+func TestTrainGenerateValidation(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{"steps", []string{"quikaitools", "train", "lora", "--model", "m", "--data", "d", "--steps", "0"}},
+		{"rank", []string{"quikaitools", "train", "lora", "--model", "m", "--data", "d", "--rank", "0"}},
+		{"accum", []string{"quikaitools", "train", "lora", "--model", "m", "--data", "d", "--accum", "0"}},
+		{"eval-every", []string{"quikaitools", "train", "lora", "--model", "m", "--data", "d", "--eval-every", "0"}},
+		{"lr", []string{"quikaitools", "train", "lora", "--model", "m", "--data", "d", "--lr", "0"}},
+		{"tokens", []string{"quikaitools", "generate", "--model", "m", "--tokens", "0"}},
+		{"template", []string{"quikaitools", "generate", "--model", "m", "--template", "chatml"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var out, errb bytes.Buffer
+			code := Main(tc.args, &out, &errb)
+			if code != 2 {
+				t.Fatalf("code=%d err=%s", code, errb.String())
+			}
+			if errb.Len() == 0 {
+				t.Fatal("expected stderr message")
+			}
+		})
+	}
+}
+
+func TestTrainStepsAndSmokeOrder(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteTiny(t, dir)
+	data := filepath.Join(dir, "d.txt")
+	if err := os.WriteFile(data, []byte("aaaaaaa bbbbbbb ccccccc ddddddd"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out, errb bytes.Buffer
+	code := Main([]string{"quikaitools", "train", "lora", "--model", dir, "--data", data, "--steps", "4", "--rank", "2", "--accum", "2", "--out", filepath.Join(dir, "ad1"), "--profile", "cpu"}, &out, &errb)
+	if code != 0 {
+		t.Fatalf("train code=%d err=%s", code, errb.String())
+	}
+	if !strings.Contains(out.String(), "lora steps=4 optimizer_steps=") {
+		t.Fatalf("expected steps and optimizer_steps: %s", out.String())
+	}
+
+	out.Reset()
+	errb.Reset()
+	code = Main([]string{"quikaitools", "train", "lora", "--model", dir, "--data", data, "--steps", "100", "--rank", "2", "--smoke", "--out", filepath.Join(dir, "ad2"), "--profile", "cpu"}, &out, &errb)
+	if code != 0 {
+		t.Fatalf("smoke code=%d err=%s", code, errb.String())
+	}
+	if !strings.Contains(out.String(), "lora steps=20 optimizer_steps=") {
+		t.Fatalf("smoke should force steps=20: %s", out.String())
+	}
+	if !strings.Contains(out.String(), "accum=4") {
+		t.Fatalf("smoke should force accum=4: %s", out.String())
 	}
 }

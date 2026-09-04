@@ -23,6 +23,59 @@ import (
 
 const Version = "0.4.0"
 
+func outf(w io.Writer, format string, a ...any) {
+	_, _ = fmt.Fprintf(w, format, a...)
+}
+
+func outln(w io.Writer, a ...any) {
+	_, _ = fmt.Fprintln(w, a...)
+}
+
+func nextArg(args []string, i *int, stderr io.Writer) (string, bool) {
+	flag := args[*i]
+	*i++
+	if *i >= len(args) || strings.HasPrefix(args[*i], "--") {
+		outf(stderr, "%s needs a value\n", flag)
+		return "", false
+	}
+	return args[*i], true
+}
+
+func parsePosInt(v, flag string, stderr io.Writer) (int, bool) {
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		outln(stderr, err)
+		return 0, false
+	}
+	if n <= 0 {
+		outf(stderr, "%s must be > 0\n", flag)
+		return 0, false
+	}
+	return n, true
+}
+
+func parsePosFloat(v, flag string, stderr io.Writer) (float64, bool) {
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		outln(stderr, err)
+		return 0, false
+	}
+	if f <= 0 {
+		outf(stderr, "%s must be > 0\n", flag)
+		return 0, false
+	}
+	return f, true
+}
+
+func doctorUsage() string {
+	kinds := make([]string, 0, 1+len(backend.AllKinds))
+	kinds = append(kinds, string(backend.KindAuto))
+	for _, k := range backend.AllKinds {
+		kinds = append(kinds, string(k))
+	}
+	return "quikaitools doctor [--profile " + strings.Join(kinds, "|") + "] [--strict]"
+}
+
 // Main is the CLI entrypoint. args[0] is the program name.
 func Main(args []string, stdout, stderr io.Writer) int {
 	if len(args) < 2 || args[1] == "-h" || args[1] == "--help" || args[1] == "help" {
@@ -31,7 +84,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 	}
 	switch args[1] {
 	case "version", "--version":
-		fmt.Fprintln(stdout, Version)
+		outln(stdout, Version)
 		return 0
 	case "doctor":
 		return cmdDoctor(args[2:], stdout, stderr)
@@ -52,18 +105,18 @@ func Main(args []string, stdout, stderr io.Writer) int {
 	case "validate-sft":
 		return cmdValidateSFT(args[2:], stdout, stderr)
 	default:
-		fmt.Fprintf(stderr, "unknown command %q\n\n", args[1])
+		outf(stderr, "unknown command %q\n\n", args[1])
 		printUsage(stderr)
 		return 2
 	}
 }
 
 func printUsage(w io.Writer) {
-	fmt.Fprint(w, `quikaitools — compose Go ML tools on V100, Strix Halo, and Mac
+	outf(w, `quikaitools — compose Go ML tools on V100, Strix Halo, and Mac
 
 Usage:
-  quikaitools doctor [--profile auto|v100|cuda|halo|mac|cpu] [--strict]
-  quikaitools catalog [--task TASK] [--machine v100|halo|mac] [--catalog DIR]
+  %s
+  quikaitools catalog [--task TASK] [--machine v100|halo|mac|cpu] [--catalog DIR]
   quikaitools pull [HF_REPO|catalog-id] [--cache DIR]
   quikaitools train lora|qlora --model DIR --data FILE [options]
   quikaitools generate --model DIR [--adapter DIR] [--prompt TEXT] [--tokens N]
@@ -77,7 +130,7 @@ Usage:
   quikaitools version
 
 Docs: https://github.com/shaneburrell/quikaitools
-`)
+`, doctorUsage())
 }
 
 func cmdDoctor(args []string, stdout, stderr io.Writer) int {
@@ -86,48 +139,47 @@ func cmdDoctor(args []string, stdout, stderr io.Writer) int {
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--profile":
-			i++
-			if i >= len(args) {
-				fmt.Fprintln(stderr, "--profile needs a value")
+			v, ok := nextArg(args, &i, stderr)
+			if !ok {
 				return 2
 			}
-			profile = backend.Kind(args[i])
+			profile = backend.Kind(v)
 		case "--strict":
 			strict = true
 		case "-h", "--help":
-			fmt.Fprintln(stdout, "quikaitools doctor [--profile auto|v100|cuda|halo|mac|cpu] [--strict]")
+			outln(stdout, doctorUsage())
 			return 0
 		default:
-			fmt.Fprintf(stderr, "unknown flag %s\n", args[i])
+			outf(stderr, "unknown flag %s\n", args[i])
 			return 2
 		}
 	}
 	p, err := backend.Detect(profile, nil)
 	if err != nil {
-		fmt.Fprintln(stderr, err)
+		outln(stderr, err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "profile:          %s\n", p)
-	fmt.Fprintf(stdout, "detected_from:    %s\n", p.DetectedFrom)
+	outf(stdout, "profile:          %s\n", p)
+	outf(stdout, "detected_from:    %s\n", p.DetectedFrom)
 	if p.HardwareHint != "" {
-		fmt.Fprintf(stdout, "hardware:         %s\n", p.HardwareHint)
+		outf(stdout, "hardware:         %s\n", p.HardwareHint)
 	}
-	fmt.Fprintf(stdout, "train:            %s\n", p.TrainEngine)
-	fmt.Fprintf(stdout, "infer_onnx:       %s\n", p.InferONNX)
-	fmt.Fprintf(stdout, "infer_gguf:       %s\n", p.InferGGUF)
-	fmt.Fprintf(stdout, "mixed_precision:  %s\n", p.MixedPrecision)
-	fmt.Fprintf(stdout, "notes:            %s\n", p.Notes)
-	fmt.Fprintln(stdout, "binding:          Layer A labels — train is portable Go; ONNX needs Hugot/ORT; GGUF needs llama-cli")
+	outf(stdout, "train:            %s\n", p.TrainEngine)
+	outf(stdout, "infer_onnx:       %s\n", p.InferONNX)
+	outf(stdout, "infer_gguf:       %s\n", p.InferGGUF)
+	outf(stdout, "mixed_precision:  %s\n", p.MixedPrecision)
+	outf(stdout, "notes:            %s\n", p.Notes)
+	outln(stdout, "binding:          Layer A labels — train is portable Go; ONNX needs Hugot/ORT; GGUF needs llama-cli")
 	if p.MixedPrecision == "fp16" {
-		fmt.Fprintln(stdout, "warning:          mixed_precision=fp16 is reserved; Go trainer compute is still FP32")
+		outln(stdout, "warning:          mixed_precision=fp16 is reserved; Go trainer compute is still FP32")
 	}
 	if p.Kind == backend.KindCPU {
-		fmt.Fprintln(stdout, "\nwarning: landed on CPU. If this is a V100/Halo/Mac box, install the GPU SDK and re-run.")
+		outln(stdout, "\nwarning: landed on CPU. If this is a V100/Halo/Mac box, install the GPU SDK and re-run.")
 	}
 	if strict {
 		ok, lines := infer.StrictCheck(p)
 		for _, line := range lines {
-			fmt.Fprintln(stdout, line)
+			outln(stdout, line)
 		}
 		if !ok {
 			return 1
@@ -141,58 +193,60 @@ func cmdCatalog(args []string, stdout, stderr io.Writer) int {
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--task":
-			i++
-			if i >= len(args) {
-				fmt.Fprintln(stderr, "--task needs a value")
+			v, ok := nextArg(args, &i, stderr)
+			if !ok {
 				return 2
 			}
-			task = args[i]
+			task = v
 		case "--machine":
-			i++
-			if i >= len(args) {
-				fmt.Fprintln(stderr, "--machine needs a value")
+			v, ok := nextArg(args, &i, stderr)
+			if !ok {
 				return 2
 			}
-			machine = args[i]
+			machine = v
 		case "--catalog":
-			i++
-			if i >= len(args) {
-				fmt.Fprintln(stderr, "--catalog needs a value")
+			v, ok := nextArg(args, &i, stderr)
+			if !ok {
 				return 2
 			}
-			dir = args[i]
+			dir = v
 		case "-h", "--help":
-			fmt.Fprintln(stdout, "quikaitools catalog [--task TASK] [--machine v100|halo|mac] [--catalog DIR]")
+			outln(stdout, "quikaitools catalog [--task TASK] [--machine v100|halo|mac|cpu] [--catalog DIR]")
 			return 0
 		default:
-			fmt.Fprintf(stderr, "unknown flag %s\n", args[i])
+			outf(stderr, "unknown flag %s\n", args[i])
 			return 2
 		}
 	}
 
 	cat, err := loadCatalog(dir)
 	if err != nil {
-		fmt.Fprintln(stderr, err)
+		outln(stderr, err)
 		return 1
 	}
 	if machine == "" {
 		if p, err := backend.Detect(backend.KindAuto, nil); err == nil {
 			machine = p.CatalogMachine()
+		} else {
+			outf(stderr, "warning: %s\n", err)
 		}
 	}
 	models := cat.Filter(task, machine)
 	if len(models) == 0 {
-		fmt.Fprintln(stdout, "no models matched")
+		outln(stdout, "no models matched")
 		return 0
 	}
 	tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tTASK\tFORMATS\tSTATUS\tENGINE")
+	outln(tw, "ID\tTASK\tFORMATS\tSTATUS\tENGINE")
 	for _, m := range models {
 		st := m.StatusOn(machine)
 		eng := m.EngineOn(machine)
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", m.ID, m.Task, join(m.Formats), st, eng)
+		outf(tw, "%s\t%s\t%s\t%s\t%s\n", m.ID, m.Task, join(m.Formats), st, eng)
 	}
-	_ = tw.Flush()
+	if err := tw.Flush(); err != nil {
+		outln(stderr, err)
+		return 1
+	}
 	return 0
 }
 
@@ -218,27 +272,26 @@ func join(s []string) string {
 	return strings.Join(s, ",")
 }
 
-// TinyRepo is the default LoRA lab model (~450KB safetensors).
-const TinyRepo = "hf-internal-testing/tiny-random-gpt2"
+// tinyRepo is the default LoRA lab model (~450KB safetensors).
+const tinyRepo = "hf-internal-testing/tiny-random-gpt2"
 
 func cmdPull(args []string, stdout, stderr io.Writer) int {
-	repo := TinyRepo
+	repo := tinyRepo
 	cache := ""
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--cache":
-			i++
-			if i >= len(args) {
-				fmt.Fprintln(stderr, "--cache needs a value")
+			v, ok := nextArg(args, &i, stderr)
+			if !ok {
 				return 2
 			}
-			cache = args[i]
+			cache = v
 		case "-h", "--help":
-			fmt.Fprintf(stdout, "quikaitools pull [HF_REPO|catalog-id] [--cache DIR]\nDefault: %s\n", TinyRepo)
+			outf(stdout, "quikaitools pull [HF_REPO|catalog-id] [--cache DIR]\nDefault: %s\n", tinyRepo)
 			return 0
 		default:
 			if strings.HasPrefix(args[i], "-") {
-				fmt.Fprintf(stderr, "unknown flag %s\n", args[i])
+				outf(stderr, "unknown flag %s\n", args[i])
 				return 2
 			}
 			repo = args[i]
@@ -250,7 +303,7 @@ func cmdPull(args []string, stdout, stderr io.Writer) int {
 		if m, ok := cat.Get(repo); ok {
 			src := zoo.RepoFromSource(m.Source)
 			if src != "" {
-				fmt.Fprintf(stdout, "catalog %s → %s\n", m.ID, src)
+				outf(stdout, "catalog %s → %s\n", m.ID, src)
 				repo = src
 				if fl := zoo.FilesForModel(m); len(fl) > 0 {
 					files = fl
@@ -258,138 +311,127 @@ func cmdPull(args []string, stdout, stderr io.Writer) int {
 				label = m.ID
 			}
 		}
+	} else {
+		outf(stderr, "warning: %s\n", err)
 	}
 	c := hub.New(cache)
 	dir, err := c.Pull(repo, files)
 	if err != nil {
-		// ONNX optional files often 404 — try GPT-2 defaults if safetensors pull partially failed
-		fmt.Fprintln(stderr, err)
+		outln(stderr, err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "pulled %s\n%s\n", label, dir)
+	outf(stdout, "pulled %s\n%s\n", label, dir)
 	return 0
 }
 
 func cmdTrain(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" {
-		fmt.Fprintln(stdout, "quikaitools train lora|qlora --model DIR --data FILE [--steps N] [--rank R] [--lr F] [--out DIR] [--accum N] [--resume DIR] [--profile KIND] [--eval-every N] [--smoke]")
+		outln(stdout, "quikaitools train lora|qlora --model DIR --data FILE [--steps N] [--rank R] [--lr F] [--out DIR] [--accum N] [--resume DIR] [--profile KIND] [--eval-every N] [--smoke]")
 		return 0
 	}
 	recipe := args[0]
 	if recipe != "lora" && recipe != "qlora" {
-		fmt.Fprintf(stderr, "unknown train recipe %q (want lora|qlora)\n", recipe)
+		outf(stderr, "unknown train recipe %q (want lora|qlora)\n", recipe)
 		return 2
 	}
 	opt := train.LoRAOptions{Steps: 30, SeqLen: 32, Rank: 4, Alpha: 8, LR: 3e-3, Accum: 1, CkptEvery: 10, QLoRA: recipe == "qlora"}
+	smoke := false
 	for i := 1; i < len(args); i++ {
-		need := func() (string, bool) {
-			i++
-			if i >= len(args) {
-				fmt.Fprintf(stderr, "%s needs a value\n", args[i-1])
-				return "", false
-			}
-			return args[i], true
-		}
 		switch args[i] {
 		case "--model":
-			v, ok := need()
+			v, ok := nextArg(args, &i, stderr)
 			if !ok {
 				return 2
 			}
 			opt.ModelDir = v
 		case "--data":
-			v, ok := need()
+			v, ok := nextArg(args, &i, stderr)
 			if !ok {
 				return 2
 			}
 			opt.DataPath = v
 		case "--out":
-			v, ok := need()
+			v, ok := nextArg(args, &i, stderr)
 			if !ok {
 				return 2
 			}
 			opt.OutDir = v
 		case "--resume":
-			v, ok := need()
+			v, ok := nextArg(args, &i, stderr)
 			if !ok {
 				return 2
 			}
 			opt.Resume = v
 		case "--profile":
-			v, ok := need()
+			v, ok := nextArg(args, &i, stderr)
 			if !ok {
 				return 2
 			}
 			opt.Profile = backend.Kind(v)
 		case "--steps":
-			v, ok := need()
+			v, ok := nextArg(args, &i, stderr)
 			if !ok {
 				return 2
 			}
-			n, err := strconv.Atoi(v)
-			if err != nil {
-				fmt.Fprintln(stderr, err)
+			n, ok := parsePosInt(v, "--steps", stderr)
+			if !ok {
 				return 2
 			}
 			opt.Steps = n
 		case "--rank":
-			v, ok := need()
+			v, ok := nextArg(args, &i, stderr)
 			if !ok {
 				return 2
 			}
-			n, err := strconv.Atoi(v)
-			if err != nil {
-				fmt.Fprintln(stderr, err)
+			n, ok := parsePosInt(v, "--rank", stderr)
+			if !ok {
 				return 2
 			}
 			opt.Rank = n
 		case "--accum":
-			v, ok := need()
+			v, ok := nextArg(args, &i, stderr)
 			if !ok {
 				return 2
 			}
-			n, err := strconv.Atoi(v)
-			if err != nil {
-				fmt.Fprintln(stderr, err)
+			n, ok := parsePosInt(v, "--accum", stderr)
+			if !ok {
 				return 2
 			}
 			opt.Accum = n
 		case "--eval-every":
-			v, ok := need()
+			v, ok := nextArg(args, &i, stderr)
 			if !ok {
 				return 2
 			}
-			n, err := strconv.Atoi(v)
-			if err != nil {
-				fmt.Fprintln(stderr, err)
+			n, ok := parsePosInt(v, "--eval-every", stderr)
+			if !ok {
 				return 2
 			}
 			opt.EvalEvery = n
 		case "--lr":
-			v, ok := need()
+			v, ok := nextArg(args, &i, stderr)
 			if !ok {
 				return 2
 			}
-			f, err := strconv.ParseFloat(v, 64)
-			if err != nil {
-				fmt.Fprintln(stderr, err)
+			f, ok := parsePosFloat(v, "--lr", stderr)
+			if !ok {
 				return 2
 			}
 			opt.LR = f
 		case "--smoke":
-			if opt.Steps > 30 {
-				opt.Steps = 20
-			}
-			opt.Steps = 20
-			opt.SeqLen = 32
-			opt.Accum = 4
+			smoke = true
 		default:
-			fmt.Fprintf(stderr, "unknown flag %s\n", args[i])
+			outf(stderr, "unknown flag %s\n", args[i])
 			return 2
 		}
 	}
+	if smoke {
+		opt.Steps = 20
+		opt.SeqLen = 32
+		opt.Accum = 4
+	}
 	if opt.ModelDir == "" || opt.DataPath == "" {
-		fmt.Fprintln(stderr, "train requires --model and --data")
+		outln(stderr, "train requires --model and --data")
 		return 2
 	}
 	if opt.OutDir == "" {
@@ -401,14 +443,14 @@ func cmdTrain(args []string, stdout, stderr io.Writer) int {
 	}
 	losses, err := train.RunLoRA(opt)
 	if err != nil {
-		fmt.Fprintln(stderr, err)
+		outln(stderr, err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "%s steps=%d rank=%d accum=%d done\n", recipe, len(losses), opt.Rank, opt.Accum)
+	outf(stdout, "%s steps=%d optimizer_steps=%d rank=%d accum=%d done\n", recipe, opt.Steps, len(losses), opt.Rank, opt.Accum)
 	if len(losses) > 0 {
-		fmt.Fprintf(stdout, "loss_first=%.4f loss_last=%.4f\n", losses[0], losses[len(losses)-1])
+		outf(stdout, "loss_first=%.4f loss_last=%.4f\n", losses[0], losses[len(losses)-1])
 	}
-	fmt.Fprintf(stdout, "adapter %s\n", opt.OutDir)
+	outf(stdout, "adapter %s\n", opt.OutDir)
 	return 0
 }
 
@@ -417,75 +459,70 @@ func cmdGenerate(args []string, stdout, stderr io.Writer) int {
 	tokens := 16
 	profile := backend.KindAuto
 	for i := 0; i < len(args); i++ {
-		need := func() (string, bool) {
-			i++
-			if i >= len(args) {
-				fmt.Fprintf(stderr, "%s needs a value\n", args[i-1])
-				return "", false
-			}
-			return args[i], true
-		}
 		switch args[i] {
 		case "--model":
-			v, ok := need()
+			v, ok := nextArg(args, &i, stderr)
 			if !ok {
 				return 2
 			}
 			model = v
 		case "--adapter":
-			v, ok := need()
+			v, ok := nextArg(args, &i, stderr)
 			if !ok {
 				return 2
 			}
 			adapter = v
 		case "--gguf":
-			v, ok := need()
+			v, ok := nextArg(args, &i, stderr)
 			if !ok {
 				return 2
 			}
 			gguf = v
 		case "--prompt":
-			v, ok := need()
+			v, ok := nextArg(args, &i, stderr)
 			if !ok {
 				return 2
 			}
 			prompt = v
 		case "--template":
-			v, ok := need()
+			v, ok := nextArg(args, &i, stderr)
 			if !ok {
 				return 2
 			}
 			template = v
 		case "--messages":
-			v, ok := need()
+			v, ok := nextArg(args, &i, stderr)
 			if !ok {
 				return 2
 			}
 			messagesJSON = v
 		case "--tokens":
-			v, ok := need()
+			v, ok := nextArg(args, &i, stderr)
 			if !ok {
 				return 2
 			}
-			n, err := strconv.Atoi(v)
-			if err != nil {
-				fmt.Fprintln(stderr, err)
+			n, ok := parsePosInt(v, "--tokens", stderr)
+			if !ok {
 				return 2
 			}
 			tokens = n
 		case "--profile":
-			v, ok := need()
+			v, ok := nextArg(args, &i, stderr)
 			if !ok {
 				return 2
 			}
 			profile = backend.Kind(v)
 		case "-h", "--help":
-			fmt.Fprintln(stdout, "quikaitools generate --model DIR [--adapter DIR] | --gguf FILE [--prompt TEXT] [--template chatml|raw] [--messages JSON] [--tokens N]")
+			outln(stdout, "quikaitools generate --model DIR [--adapter DIR] | --gguf FILE [--prompt TEXT] [--template chatml|raw] [--messages JSON] [--tokens N]")
 			return 0
 		default:
-			fmt.Fprintf(stderr, "unknown flag %s\n", args[i])
+			outf(stderr, "unknown flag %s\n", args[i])
 			return 2
 		}
+	}
+	if template != "" && prompt == "" && messagesJSON == "" {
+		outln(stderr, "generate --template requires --prompt or --messages")
+		return 2
 	}
 	if messagesJSON != "" || template != "" {
 		var msgs []chatfmt.Message
@@ -493,13 +530,13 @@ func cmdGenerate(args []string, stdout, stderr io.Writer) int {
 			var err error
 			msgs, err = chatfmt.ParseMessagesJSON(messagesJSON)
 			if err != nil {
-				fmt.Fprintln(stderr, err)
+				outln(stderr, err)
 				return 2
 			}
 		}
 		formatted, err := chatfmt.Apply(template, msgs, prompt)
 		if err != nil {
-			fmt.Fprintln(stderr, err)
+			outln(stderr, err)
 			return 2
 		}
 		prompt = formatted
@@ -509,36 +546,36 @@ func cmdGenerate(args []string, stdout, stderr io.Writer) int {
 	if gguf != "" {
 		p, err := backend.Detect(profile, nil)
 		if err != nil {
-			fmt.Fprintln(stderr, err)
+			outln(stderr, err)
 			return 1
 		}
 		out, err := infer.GenerateGGUF(infer.GenerateGGUFOptions{Model: gguf, Prompt: prompt, Tokens: tokens, Profile: p})
 		if err != nil {
-			fmt.Fprintln(stderr, err)
+			outln(stderr, err)
 			return 1
 		}
-		fmt.Fprintln(stdout, out)
+		outln(stdout, out)
 		return 0
 	}
 	if model == "" {
-		fmt.Fprintln(stderr, "generate requires --model or --gguf")
+		outln(stderr, "generate requires --model or --gguf")
 		return 2
 	}
 	base, err := gpt2.LoadDir(model)
 	if err != nil {
-		fmt.Fprintln(stderr, err)
+		outln(stderr, err)
 		return 1
 	}
 	tok, err := gpt2.LoadTokenizer(model)
 	if err != nil {
-		fmt.Fprintln(stderr, err)
+		outln(stderr, err)
 		return 1
 	}
 	var m *peft.Model
 	if adapter != "" {
 		m, err = peft.Load(base, adapter)
 		if err != nil {
-			fmt.Fprintln(stderr, err)
+			outln(stderr, err)
 			return 1
 		}
 	} else {
@@ -549,7 +586,7 @@ func cmdGenerate(args []string, stdout, stderr io.Writer) int {
 		ids = []int{0}
 	}
 	out := m.Generate(ids, tokens)
-	fmt.Fprintln(stdout, tok.Decode(out))
+	outln(stdout, tok.Decode(out))
 	return 0
 }
 
@@ -557,117 +594,101 @@ func cmdEmbed(args []string, stdout, stderr io.Writer) int {
 	visionMode := false
 	var model, text, image string
 	for i := 0; i < len(args); i++ {
-		need := func() (string, bool) {
-			i++
-			if i >= len(args) {
-				fmt.Fprintf(stderr, "%s needs a value\n", args[i-1])
-				return "", false
-			}
-			return args[i], true
-		}
 		switch args[i] {
 		case "--vision":
 			visionMode = true
 		case "--model":
-			v, ok := need()
+			v, ok := nextArg(args, &i, stderr)
 			if !ok {
 				return 2
 			}
 			model = v
 		case "--text":
-			v, ok := need()
+			v, ok := nextArg(args, &i, stderr)
 			if !ok {
 				return 2
 			}
 			text = v
 		case "--image":
-			v, ok := need()
+			v, ok := nextArg(args, &i, stderr)
 			if !ok {
 				return 2
 			}
 			image = v
 		case "-h", "--help":
-			fmt.Fprintln(stdout, "quikaitools embed --model DIR --text TEXT | --vision --model DIR --image FILE")
+			outln(stdout, "quikaitools embed --model DIR --text TEXT | --vision --model DIR --image FILE")
 			return 0
 		default:
-			fmt.Fprintf(stderr, "unknown flag %s\n", args[i])
+			outf(stderr, "unknown flag %s\n", args[i])
 			return 2
 		}
 	}
 	if model == "" {
-		fmt.Fprintln(stderr, "embed requires --model")
+		outln(stderr, "embed requires --model")
 		return 2
 	}
 	if visionMode {
 		if image == "" {
-			fmt.Fprintln(stderr, "embed --vision requires --image")
+			outln(stderr, "embed --vision requires --image")
 			return 2
 		}
 		v, eng, err := infer.EmbedVision(infer.EmbedVisionOptions{ModelDir: model, Image: image, Size: 224})
 		if err != nil {
-			fmt.Fprintln(stderr, err)
+			outln(stderr, err)
 			return 1
 		}
-		fmt.Fprintf(stdout, "engine=%s dim=%d\n", eng, len(v))
-		fmt.Fprintln(stdout, formatVec(v, 8))
+		outf(stdout, "engine=%s dim=%d\n", eng, len(v))
+		outln(stdout, formatVec(v, 8))
 		return 0
 	}
 	if text == "" {
-		fmt.Fprintln(stderr, "embed requires --text (or --vision --image)")
+		outln(stderr, "embed requires --text (or --vision --image)")
 		return 2
 	}
 	v, eng, err := infer.EmbedText(infer.EmbedTextOptions{ModelDir: model, Text: text})
 	if err != nil {
-		fmt.Fprintln(stderr, err)
+		outln(stderr, err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "engine=%s dim=%d\n", eng, len(v))
-	fmt.Fprintln(stdout, formatVec(v, 8))
+	outf(stdout, "engine=%s dim=%d\n", eng, len(v))
+	outln(stdout, formatVec(v, 8))
 	return 0
 }
 
 func cmdTranscribe(args []string, stdout, stderr io.Writer) int {
 	var model, audioPath string
 	for i := 0; i < len(args); i++ {
-		need := func() (string, bool) {
-			i++
-			if i >= len(args) {
-				fmt.Fprintf(stderr, "%s needs a value\n", args[i-1])
-				return "", false
-			}
-			return args[i], true
-		}
 		switch args[i] {
 		case "--model":
-			v, ok := need()
+			v, ok := nextArg(args, &i, stderr)
 			if !ok {
 				return 2
 			}
 			model = v
 		case "--audio":
-			v, ok := need()
+			v, ok := nextArg(args, &i, stderr)
 			if !ok {
 				return 2
 			}
 			audioPath = v
 		case "-h", "--help":
-			fmt.Fprintln(stdout, "quikaitools transcribe --model DIR --audio FILE")
+			outln(stdout, "quikaitools transcribe --model DIR --audio FILE")
 			return 0
 		default:
-			fmt.Fprintf(stderr, "unknown flag %s\n", args[i])
+			outf(stderr, "unknown flag %s\n", args[i])
 			return 2
 		}
 	}
 	if model == "" || audioPath == "" {
-		fmt.Fprintln(stderr, "transcribe requires --model and --audio")
+		outln(stderr, "transcribe requires --model and --audio")
 		return 2
 	}
 	text, eng, err := infer.Transcribe(infer.TranscribeOptions{ModelDir: model, Audio: audioPath})
 	if err != nil {
-		fmt.Fprintln(stderr, err)
+		outln(stderr, err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "engine=%s\n%s\n", eng, text)
+	outf(stdout, "engine=%s\n%s\n", eng, text)
 	return 0
 }
 
@@ -687,46 +708,45 @@ func cmdValidateSFT(args []string, stdout, stderr io.Writer) int {
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--path":
-			i++
-			if i >= len(args) {
-				fmt.Fprintln(stderr, "--path needs a value")
+			v, ok := nextArg(args, &i, stderr)
+			if !ok {
 				return 2
 			}
-			path = args[i]
+			path = v
 		case "-h", "--help":
-			fmt.Fprintln(stdout, "quikaitools validate-sft --path FILE.jsonl")
+			outln(stdout, "quikaitools validate-sft --path FILE.jsonl")
 			return 0
 		default:
-			fmt.Fprintf(stderr, "unknown flag %s\n", args[i])
+			outf(stderr, "unknown flag %s\n", args[i])
 			return 2
 		}
 	}
 	if path == "" {
-		fmt.Fprintln(stderr, "validate-sft requires --path")
+		outln(stderr, "validate-sft requires --path")
 		return 2
 	}
 	total, issues, err := train.ValidateMessagesJSONL(path)
 	if err != nil {
-		fmt.Fprintln(stderr, err)
+		outln(stderr, err)
 		return 1
 	}
 	if len(issues) == 0 {
-		fmt.Fprintf(stdout, "VALID %s: %d rows\n", path, total)
+		outf(stdout, "VALID %s: %d rows\n", path, total)
 		return 0
 	}
-	fmt.Fprintf(stdout, "INVALID %s: %d rows, %d issues\n", path, total, len(issues))
+	outf(stdout, "INVALID %s: %d rows, %d issues\n", path, total, len(issues))
 	for i, issue := range issues {
 		if i >= 20 {
 			break
 		}
-		fmt.Fprintf(stdout, "  - %s\n", issue)
+		outf(stdout, "  - %s\n", issue)
 	}
 	return 1
 }
 
 func cmdExport(args []string, stdout, stderr io.Writer) int {
 	if len(args) < 1 {
-		fmt.Fprintln(stderr, "export requires merge|gguf|modelfile")
+		outln(stderr, "export requires merge|gguf|modelfile")
 		return 2
 	}
 	sub := args[0]
@@ -739,10 +759,10 @@ func cmdExport(args []string, stdout, stderr io.Writer) int {
 	case "modelfile":
 		return cmdExportModelfile(args, stdout, stderr)
 	case "-h", "--help":
-		fmt.Fprintln(stdout, "quikaitools export merge|gguf|modelfile …")
+		outln(stdout, "quikaitools export merge|gguf|modelfile …")
 		return 0
 	default:
-		fmt.Fprintf(stderr, "unknown export subcommand %q\n", sub)
+		outf(stderr, "unknown export subcommand %q\n", sub)
 		return 2
 	}
 }
@@ -752,31 +772,40 @@ func cmdExportMerge(args []string, stdout, stderr io.Writer) int {
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--model":
-			i++
-			model = args[i]
+			v, ok := nextArg(args, &i, stderr)
+			if !ok {
+				return 2
+			}
+			model = v
 		case "--adapter":
-			i++
-			adapter = args[i]
+			v, ok := nextArg(args, &i, stderr)
+			if !ok {
+				return 2
+			}
+			adapter = v
 		case "--out":
-			i++
-			out = args[i]
+			v, ok := nextArg(args, &i, stderr)
+			if !ok {
+				return 2
+			}
+			out = v
 		case "-h", "--help":
-			fmt.Fprintln(stdout, "quikaitools export merge --model DIR --adapter DIR --out DIR")
+			outln(stdout, "quikaitools export merge --model DIR --adapter DIR --out DIR")
 			return 0
 		default:
-			fmt.Fprintf(stderr, "unknown flag %s\n", args[i])
+			outf(stderr, "unknown flag %s\n", args[i])
 			return 2
 		}
 	}
 	if model == "" || adapter == "" || out == "" {
-		fmt.Fprintln(stderr, "export merge requires --model, --adapter, and --out")
+		outln(stderr, "export merge requires --model, --adapter, and --out")
 		return 2
 	}
 	if err := exportx.MergeGPT2LoRA(model, adapter, out); err != nil {
-		fmt.Fprintln(stderr, err)
+		outln(stderr, err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "merged -> %s\n", out)
+	outf(stdout, "merged -> %s\n", out)
 	return 0
 }
 
@@ -785,36 +814,45 @@ func cmdExportGGUF(args []string, stdout, stderr io.Writer) int {
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--model":
-			i++
-			model = args[i]
+			v, ok := nextArg(args, &i, stderr)
+			if !ok {
+				return 2
+			}
+			model = v
 		case "--out":
-			i++
-			out = args[i]
+			v, ok := nextArg(args, &i, stderr)
+			if !ok {
+				return 2
+			}
+			out = v
 		case "--quant":
-			i++
-			quant = args[i]
+			v, ok := nextArg(args, &i, stderr)
+			if !ok {
+				return 2
+			}
+			quant = v
 		case "-h", "--help":
-			fmt.Fprintln(stdout, "quikaitools export gguf --model DIR --out FILE [--quant Q4_K_M]")
+			outln(stdout, "quikaitools export gguf --model DIR --out FILE [--quant Q4_K_M]")
 			return 0
 		default:
-			fmt.Fprintf(stderr, "unknown flag %s\n", args[i])
+			outf(stderr, "unknown flag %s\n", args[i])
 			return 2
 		}
 	}
 	if model == "" || out == "" {
-		fmt.Fprintln(stderr, "export gguf requires --model and --out")
+		outln(stderr, "export gguf requires --model and --out")
 		return 2
 	}
 	skip, err := exportx.ConvertGGUF(model, out, quant)
 	if err != nil {
-		fmt.Fprintln(stderr, err)
+		outln(stderr, err)
 		return 1
 	}
 	if skip != "" {
-		fmt.Fprintf(stdout, "SKIP: %s\n", skip)
+		outf(stdout, "SKIP: %s\n", skip)
 		return 0
 	}
-	fmt.Fprintf(stdout, "gguf -> %s\n", out)
+	outf(stdout, "gguf -> %s\n", out)
 	return 0
 }
 
@@ -823,30 +861,39 @@ func cmdExportModelfile(args []string, stdout, stderr io.Writer) int {
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--template":
-			i++
-			template = args[i]
+			v, ok := nextArg(args, &i, stderr)
+			if !ok {
+				return 2
+			}
+			template = v
 		case "--gguf":
-			i++
-			gguf = args[i]
+			v, ok := nextArg(args, &i, stderr)
+			if !ok {
+				return 2
+			}
+			gguf = v
 		case "--out":
-			i++
-			out = args[i]
+			v, ok := nextArg(args, &i, stderr)
+			if !ok {
+				return 2
+			}
+			out = v
 		case "-h", "--help":
-			fmt.Fprintln(stdout, "quikaitools export modelfile --gguf FILE --out FILE [--template FILE]")
+			outln(stdout, "quikaitools export modelfile --gguf FILE --out FILE [--template FILE]")
 			return 0
 		default:
-			fmt.Fprintf(stderr, "unknown flag %s\n", args[i])
+			outf(stderr, "unknown flag %s\n", args[i])
 			return 2
 		}
 	}
 	if gguf == "" || out == "" {
-		fmt.Fprintln(stderr, "export modelfile requires --gguf and --out")
+		outln(stderr, "export modelfile requires --gguf and --out")
 		return 2
 	}
 	if err := exportx.WriteModelfile(template, gguf, out); err != nil {
-		fmt.Fprintln(stderr, err)
+		outln(stderr, err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "modelfile -> %s\n", out)
+	outf(stdout, "modelfile -> %s\n", out)
 	return 0
 }

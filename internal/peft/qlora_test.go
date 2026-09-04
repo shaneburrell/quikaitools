@@ -13,7 +13,10 @@ func TestQLoRATrain(t *testing.T) {
 	if !m.useQ || len(m.qAttn) == 0 {
 		t.Fatal("qlora not enabled")
 	}
-	loss := m.StepLoss([]int{1, 2, 3, 4, 5, 6, 7, 8})
+	loss, err := m.StepLoss([]int{1, 2, 3, 4, 5, 6, 7, 8})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if loss != loss {
 		t.Fatalf("nan loss")
 	}

@@ -17,6 +17,10 @@ import (
 type EmbedTextOptions struct {
 	ModelDir string
 	Text     string
+	// StrictStub, when true, returns an error instead of placeholder stub output
+	// (ONNX hash / vision-gap / whisper-mel). Default false preserves today's
+	// permissive CLI behavior; wire --allow-stub=false to StrictStub later.
+	StrictStub bool
 }
 
 // EmbedText returns a bag-of-token-embedding mean from GPT-2 WTE (portable MVP).
@@ -43,7 +47,7 @@ func EmbedText(opt EmbedTextOptions) ([]float32, string, error) {
 		out := make([]float32, d)
 		for _, id := range ids {
 			if id < 0 || id >= m.Cfg.VocabSize {
-				id = 0
+				return nil, "", fmt.Errorf("embed: token id %d outside vocab %d", id, m.Cfg.VocabSize)
 			}
 			row := m.WTE[id*d : (id+1)*d]
 			for j := 0; j < d; j++ {
@@ -59,6 +63,9 @@ func EmbedText(opt EmbedTextOptions) ([]float32, string, error) {
 	}
 	// ONNX folder: stub embedding from text hash until ORT is linked
 	if hasONNX(opt.ModelDir) {
+		if err := denyStub(opt.StrictStub, "onnx-stub-hash"); err != nil {
+			return nil, "", err
+		}
 		out := hashEmbed(opt.Text, 384)
 		return out, "onnx-stub-hash", nil
 	}
@@ -70,6 +77,8 @@ type EmbedVisionOptions struct {
 	ModelDir string
 	Image    string
 	Size     int
+	// StrictStub opt-in fail-closed for stub engines. See EmbedTextOptions.
+	StrictStub bool
 }
 
 // EmbedVision preprocesses the image; returns channel means + spatial stats (stub) or notes onnx.
@@ -102,6 +111,9 @@ func EmbedVision(opt EmbedVisionOptions) ([]float32, string, error) {
 	if hasONNX(opt.ModelDir) {
 		engine = "onnx-stub+vision-preprocess"
 	}
+	if err := denyStub(opt.StrictStub, engine); err != nil {
+		return nil, "", err
+	}
 	l2normalize(out)
 	return out, engine, nil
 }
@@ -110,6 +122,8 @@ func EmbedVision(opt EmbedVisionOptions) ([]float32, string, error) {
 type TranscribeOptions struct {
 	ModelDir string
 	Audio    string
+	// StrictStub opt-in fail-closed for stub engines. See EmbedTextOptions.
+	StrictStub bool
 }
 
 // Transcribe loads WAV, builds log-mel, returns a stub transcript (ORT Whisper later).
@@ -132,8 +146,18 @@ func Transcribe(opt TranscribeOptions) (string, string, error) {
 	if hasONNX(opt.ModelDir) {
 		engine = "onnx-stub+whisper-mel"
 	}
+	if err := denyStub(opt.StrictStub, engine); err != nil {
+		return "", "", err
+	}
 	text := fmt.Sprintf("[stub transcript] frames=%d mels=%d energy=%.4f", mel.NFrames, mel.NMels, energy)
 	return text, engine, nil
+}
+
+func denyStub(strict bool, engine string) error {
+	if !strict {
+		return nil
+	}
+	return fmt.Errorf("embed: %s is a stub (ONNX runtime not linked); pass --allow-stub to get placeholder output", engine)
 }
 
 func hasONNX(dir string) bool {

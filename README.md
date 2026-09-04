@@ -13,13 +13,22 @@ quikaitools doctor [--strict]
 quikaitools catalog --machine halo --task generate
 quikaitools pull tiny-random-gpt2
 quikaitools train lora --model ~/.cache/quikaitools/models/hf-internal-testing/tiny-random-gpt2 \
-  --data testdata/fixtures/stories.txt --steps 30 --rank 4 --accum 2 --profile mac
+  --data testdata/fixtures/stories.txt --steps 30 --rank 4 --accum 2 --profile mac \
+  --out testdata/artifacts/adapter-lora
 quikaitools generate --model … --adapter testdata/artifacts/adapter-lora --prompt "Once"
+quikaitools generate --gguf FILE --prompt "Hi" --tokens 16
 quikaitools train qlora --model … --data … --steps 20
 quikaitools embed --model … --text "hello"
 quikaitools embed --vision --model … --image testdata/fixtures/red.png
 quikaitools transcribe --model … --audio testdata/fixtures/tone.wav
+quikaitools export merge --model DIR --adapter DIR --out DIR
+quikaitools export gguf --model DIR --out FILE.gguf
+quikaitools export modelfile --gguf FILE --out Modelfile
+quikaitools validate-sft --path FILE.jsonl
+quikaitools version          # also --version
 ```
+
+`catalog --task` takes catalog task ids (`generate`, `embed`, `asr`, …). `transcribe` is accepted as an alias for `asr`.
 
 Smoke checklist: [docs/lab/mvp-smoke.md](docs/lab/mvp-smoke.md) (Mac filled; Halo/V100 when those boxes are on).
 
@@ -86,6 +95,14 @@ quikaitools catalog --task embed --catalog ./catalog
 export QUIKAITOOLS_PROFILE=halo
 ```
 
+### Environment
+
+| Variable | Read by | Purpose |
+|----------|---------|---------|
+| `QUIKAITOOLS_PROFILE` | `doctor` / `backend.Detect` | Force `v100` / `halo` / `mac` / `cpu` when `--profile` is auto |
+| `QUIKAITOOLS_CACHE` | `pull` / `hub` | Weight cache (default `~/.cache/quikaitools`) |
+| `QUIKAITOOLS_LLAMA` | `generate --gguf` | Path to `llama-cli` (or other llama.cpp binary) |
+
 `doctor` must fail loudly in your head if a V100 box prints `train: gomlx-go` — that means you landed on CPU. Install CUDA 12 and the GoMLX XLA plugin, then re-run.
 
 ## How it works
@@ -93,7 +110,7 @@ export QUIKAITOOLS_PROFILE=halo
 ```text
 quikaitools doctor ──► backend.Detect ──► Profile (v100 | halo | mac | cpu)
                                               │
-catalog/*.yaml ──► zoo.Load ──────────────────┤ per-machine status + engine labels
+catalog/*.yaml ──► zoo.LoadDir / zoo.LoadFS ──┤ per-machine status + engine labels
                                               ▼
               Train  → portable Go LoRA/QLoRA (GoMLX XLA = Layer B)
               ONNX   → preprocess + stub until Hugot/ORT linked
@@ -159,14 +176,17 @@ make build
 
 | Make target | What it does |
 |-------------|--------------|
-| `make fmt` | `gofmt` |
+| `make fmt` | `gofmt -l` check (fails if any file needs rewrite) |
+| `make fmt-fix` | `gofmt` rewrite |
+| `make lint` | `golangci-lint run ./...` |
 | `make vet` | `go vet ./...` |
 | `make test` | Unit tests |
 | `make test-race` | Race detector |
 | `make cover` | Coverage HTML + **70%** gate → `testdata/artifacts/` |
 | `make bench` | Benchmarks → `testdata/artifacts/bench.txt` |
 | `make tidy` | `go mod tidy` |
-| `make check` | tidy → fmt → vet → race → cover |
+| `make tidy-check` | `go mod tidy -diff` (fails if go.mod/go.sum would change) |
+| `make check` | tidy-check → fmt → vet → lint → race → cover |
 | `make build` | `bin/quikaitools` |
 | `make clean` | Remove `bin/`, `dist/`, `testdata/artifacts/` |
 
@@ -183,6 +203,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 **v0.3 (MVP)** — `train qlora`, `generate` (+ `--adapter` / `--gguf`), `embed` / `embed --vision` / `transcribe`, Accelerate-lite accum/checkpoint/resume, catalog-id pull, Go 1.27 CI. ONNX paths are labeled stubs until Hugot/ORT is linked; GGUF needs a local `llama-cli`. Trainer is portable Go (profile strings are Layer A intent, not a bound GoMLX session yet).
 
 **v0.4** — `export merge|gguf|modelfile`, messages JSONL train + `validate-sft`, ChatML `--template` / `--messages` on `generate`. ONNX remains stub until Hugot/ORT is linked.
+
+**v0.5 (in progress)** — real GPT-2 byte-level BPE; optimizer state on resume; loss masking for messages JSONL; sampling flags; CLIP normalization preset; Whisper-exact log-mel; `HF_TOKEN` / `HF_ENDPOINT` / `HF_HOME`; stubs fail closed unless `--allow-stub`; HF PEFT adapter format.
 
 **Next**
 

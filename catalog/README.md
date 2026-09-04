@@ -1,6 +1,6 @@
 # Model catalog
 
-YAML files in [`models/`](models) are the zoo. Schema and rules: [docs/gaps/zoo.md](../docs/gaps/zoo.md).
+YAML files in [`models/`](models) are the zoo. Schema (fields, status values, `LoadDir` fallback): [docs/gaps/zoo.md](../docs/gaps/zoo.md).
 
 ```bash
 quikaitools catalog

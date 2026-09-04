@@ -9,7 +9,7 @@
 ```bash
 quikaitools pull tiny-random-gpt2
 quikaitools train lora --model DIR --data FILE --accum 2 --resume DIR --profile mac
-quikaitools train lora --model DIR --data train.jsonl --smoke   # messages JSONL → flatten
+quikaitools train lora --model DIR --data train.jsonl --smoke   # JSONL by extension; --smoke = steps=20, seq=32, accum=4
 quikaitools train qlora --model DIR --data FILE
 quikaitools validate-sft --path train.jsonl
 quikaitools generate --model … --adapter … --prompt "…" --tokens 16
@@ -21,9 +21,10 @@ quikaitools export modelfile --gguf FILE --out Modelfile
 
 - `internal/peft`: LoRA on `c_attn` / `c_fc`, save/load `adapter.json`, greedy generate, **MergeIntoBase**
 - `internal/peft` QLoRA: pack Conv1D to uint4, dequant in forward
-- `internal/train`: messages JSONL flatten for GPT-2 smoke; `validate-sft`
+- `internal/train`: messages JSONL flatten (`.jsonl` extension, not `--smoke`); `validate-sft`
 - `internal/chatfmt`: ChatML / raw templates for `generate`
 - `internal/dist`: accum, checkpoint `meta.json`, `--profile` (FP16 flag for V100)
+- Upcoming: `--mask-prompt` trains loss on assistant completion tokens only
 
 ## What we will not port
 

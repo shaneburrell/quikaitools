@@ -2,6 +2,7 @@ package train
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -39,13 +40,13 @@ func MessagesToText(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	dec := json.NewDecoder(f)
 	var parts []string
 	for {
 		var ex MessagesExample
 		if err := dec.Decode(&ex); err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			return "", err
@@ -62,20 +63,73 @@ func MessagesToText(path string) (string, error) {
 	return strings.Join(parts, "\n\n"), nil
 }
 
+// PromptCompletion is one SFT pair: prompt is everything before the last
+// assistant turn (including system), completion is that last assistant turn.
+type PromptCompletion struct {
+	Prompt     string
+	Completion string
+}
+
+// MessagesToPromptCompletions converts messages JSONL into per-sample pairs.
+// The completion is the final assistant turn. Everything before it — including
+// system turns, which MessagesToText still drops — is the prompt, joined with
+// the same "\n\n" separator MessagesToText uses. A trailing "\n\n" is appended
+// to a non-empty prompt so prompt+completion matches the flattened document.
+func MessagesToPromptCompletions(path string) ([]PromptCompletion, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	dec := json.NewDecoder(f)
+	var out []PromptCompletion
+	for {
+		var ex MessagesExample
+		if err := dec.Decode(&ex); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return nil, err
+		}
+		last := -1
+		for i, m := range ex.Messages {
+			if m.Role == "assistant" {
+				last = i
+			}
+		}
+		if last < 0 {
+			continue
+		}
+		var promptParts []string
+		for i := 0; i < last; i++ {
+			promptParts = append(promptParts, ex.Messages[i].Content)
+		}
+		prompt := strings.Join(promptParts, "\n\n")
+		if prompt != "" {
+			prompt += "\n\n"
+		}
+		out = append(out, PromptCompletion{Prompt: prompt, Completion: ex.Messages[last].Content})
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("train: no assistant completions in %s", path)
+	}
+	return out, nil
+}
+
 // ValidateMessagesJSONL checks TRL-style messages rows.
 func ValidateMessagesJSONL(path string) (total int, issues []string, err error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return 0, nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	dec := json.NewDecoder(f)
 	line := 0
 	for {
 		line++
 		var obj map[string]any
 		if err := dec.Decode(&obj); err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			issues = append(issues, fmt.Sprintf("line %d: invalid json (%v)", line, err))

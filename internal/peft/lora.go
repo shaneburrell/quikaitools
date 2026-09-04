@@ -3,6 +3,7 @@ package peft
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -48,6 +49,12 @@ type Model struct {
 
 // Wrap attaches zero-B LoRA (A small random) so the first step is identity.
 func Wrap(base *gpt2.Model, cfg Config) *Model {
+	return WrapSeeded(base, cfg, 0)
+}
+
+// WrapSeeded is Wrap with a seed mixed into LoRA A initialization.
+// Seed 0 uses the historical name-hash init (identical to Wrap).
+func WrapSeeded(base *gpt2.Model, cfg Config, seed int64) *Model {
 	if cfg.Rank <= 0 {
 		cfg.Rank = 4
 	}
@@ -60,13 +67,17 @@ func Wrap(base *gpt2.Model, cfg Config) *Model {
 	m := &Model{Base: base, Cfg: cfg}
 	d, inn := base.Cfg.NEmbd, base.Cfg.Inner()
 	for i := range base.Blocks {
-		m.Attn = append(m.Attn, newAdapter(fmt.Sprintf("h.%d.attn.c_attn", i), d, 3*d, cfg.Rank))
-		m.FC = append(m.FC, newAdapter(fmt.Sprintf("h.%d.mlp.c_fc", i), d, inn, cfg.Rank))
+		m.Attn = append(m.Attn, newAdapterSeeded(fmt.Sprintf("h.%d.attn.c_attn", i), d, 3*d, cfg.Rank, seed))
+		m.FC = append(m.FC, newAdapterSeeded(fmt.Sprintf("h.%d.mlp.c_fc", i), d, inn, cfg.Rank, seed))
 	}
 	return m
 }
 
 func newAdapter(name string, in, out, r int) *Adapter {
+	return newAdapterSeeded(name, in, out, r, 0)
+}
+
+func newAdapterSeeded(name string, in, out, r int, seed int64) *Adapter {
 	a := &Adapter{
 		Name: name, In: in, Out: out, Rank: r,
 		A: make([]float32, in*r), B: make([]float32, r*out),
@@ -74,9 +85,10 @@ func newAdapter(name string, in, out, r int) *Adapter {
 		mA: make([]float32, in*r), vA: make([]float32, in*r),
 		mB: make([]float32, r*out), vB: make([]float32, r*out),
 	}
-	// Kaiming-ish A, zeros B (standard LoRA init).
+	// Kaiming-ish A, zeros B (standard LoRA init). Seed 0 is a no-op XOR.
 	scale := float32(1 / math.Sqrt(float64(in)))
 	s := uint64(len(name)*997 + in + out)
+	s ^= uint64(seed)
 	for i := range a.A {
 		s ^= s << 13
 		s ^= s >> 7
@@ -209,10 +221,79 @@ func (m *Model) Save(dir string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "adapter.json"), body, 0o644)
+	if err := os.WriteFile(filepath.Join(dir, "adapter.json"), body, 0o644); err != nil {
+		return err
+	}
+	return m.saveOptimizer(dir)
+}
+
+type optimizerDump struct {
+	Name string    `json:"name"`
+	MA   []float32 `json:"m_a"`
+	VA   []float32 `json:"v_a"`
+	MB   []float32 `json:"m_b"`
+	VB   []float32 `json:"v_b"`
+	Step int       `json:"step"`
+}
+
+func (m *Model) saveOptimizer(dir string) error {
+	var list []optimizerDump
+	for _, a := range m.adapters() {
+		list = append(list, optimizerDump{a.Name, a.mA, a.vA, a.mB, a.vB, a.Step})
+	}
+	body, err := json.MarshalIndent(struct {
+		Adapters []optimizerDump `json:"adapters"`
+	}{list}, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "optimizer.json"), body, 0o644)
+}
+
+func (m *Model) restoreOptimizer(dir string) error {
+	raw, err := os.ReadFile(filepath.Join(dir, "optimizer.json"))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	var file struct {
+		Adapters []optimizerDump `json:"adapters"`
+	}
+	if err := json.Unmarshal(raw, &file); err != nil {
+		return err
+	}
+	byName := map[string]*Adapter{}
+	for _, a := range m.adapters() {
+		byName[a.Name] = a
+	}
+	for _, d := range file.Adapters {
+		a, ok := byName[d.Name]
+		if !ok {
+			continue
+		}
+		if len(d.MA) == len(a.mA) {
+			copy(a.mA, d.MA)
+		}
+		if len(d.VA) == len(a.vA) {
+			copy(a.vA, d.VA)
+		}
+		if len(d.MB) == len(a.mB) {
+			copy(a.mB, d.MB)
+		}
+		if len(d.VB) == len(a.vB) {
+			copy(a.vB, d.VB)
+		}
+		a.Step = d.Step
+	}
+	return nil
 }
 
 func matmul(a []float32, aR, aC int, b []float32, bR, bC int) []float32 {
+	if aC != bR {
+		panic("peft: matmul shape")
+	}
 	out := make([]float32, aR*bC)
 	for i := 0; i < aR; i++ {
 		for k := 0; k < aC; k++ {
