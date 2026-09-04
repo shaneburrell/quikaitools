@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 
 	"github.com/shaneburrell/quikaitools/internal/gpt2"
+	"github.com/shaneburrell/quikaitools/internal/safetensors"
 )
 
 // Config is a PEFT-style LoRA setup.
@@ -27,6 +28,9 @@ func (c Config) Scale() float32 {
 }
 
 // Adapter holds A [in,r] and B [r,out] for one linear.
+// GPT-2 Conv1D is stored [in, out] (y = x @ W). Hugging Face PEFT stores the
+// same LoRA as nn.Linear: lora_A [r, in] and lora_B [out, r] with
+// fan_in_fan_out=true, so Save/Load transpose both matrices.
 type Adapter struct {
 	Name           string
 	In, Out, Rank  int
@@ -196,7 +200,8 @@ func (m *Model) Step() {
 	}
 }
 
-// Save writes adapter.json (tiny, human-readable).
+// Save writes adapter.json, optimizer.json, and Hugging Face PEFT files
+// (adapter_config.json + adapter_model.safetensors).
 func (m *Model) Save(dir string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -224,7 +229,71 @@ func (m *Model) Save(dir string) error {
 	if err := os.WriteFile(filepath.Join(dir, "adapter.json"), body, 0o644); err != nil {
 		return err
 	}
-	return m.saveOptimizer(dir)
+	if err := m.saveOptimizer(dir); err != nil {
+		return err
+	}
+	return m.saveHFPEFT(dir)
+}
+
+// hfAdapterConfig is Hugging Face PEFT adapter_config.json (LoRA subset).
+type hfAdapterConfig struct {
+	PeftType            string   `json:"peft_type"`
+	TaskType            string   `json:"task_type"`
+	BaseModelNameOrPath string   `json:"base_model_name_or_path"`
+	R                   int      `json:"r"`
+	LoraAlpha           float32  `json:"lora_alpha"`
+	LoraDropout         float64  `json:"lora_dropout"`
+	Bias                string   `json:"bias"`
+	FanInFanOut         bool     `json:"fan_in_fan_out"`
+	TargetModules       []string `json:"target_modules"`
+	InferenceMode       bool     `json:"inference_mode"`
+}
+
+const hfPEFTPrefix = "base_model.model.transformer."
+
+// saveHFPEFT writes adapter_config.json and adapter_model.safetensors.
+// Internal A is [in, r] and B is [r, out]; PEFT tensors are the transposes
+// [r, in] and [out, r] (nn.Linear + fan_in_fan_out for Conv1D).
+func (m *Model) saveHFPEFT(dir string) error {
+	cfg := hfAdapterConfig{
+		PeftType:            "LORA",
+		TaskType:            "CAUSAL_LM",
+		BaseModelNameOrPath: "", // gpt2.Model has no Name field
+		R:                   m.Cfg.Rank,
+		LoraAlpha:           m.Cfg.Alpha,
+		LoraDropout:         0,
+		Bias:                "none",
+		FanInFanOut:         true,
+		TargetModules:       []string{"c_attn", "c_fc"},
+		InferenceMode:       false,
+	}
+	body, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "adapter_config.json"), body, 0o644); err != nil {
+		return err
+	}
+	tensors := map[string]safetensors.Tensor{}
+	put := func(layer int, module string, a *Adapter) {
+		if a == nil {
+			return
+		}
+		// Transpose [in,r] -> [r,in] and [r,out] -> [out,r].
+		aT := transpose(a.A, a.In, a.Rank)
+		bT := transpose(a.B, a.Rank, a.Out)
+		keyA := fmt.Sprintf(hfPEFTPrefix+"h.%d.%s.lora_A.weight", layer, module)
+		keyB := fmt.Sprintf(hfPEFTPrefix+"h.%d.%s.lora_B.weight", layer, module)
+		tensors[keyA] = safetensors.Tensor{Name: keyA, Dtype: "F32", Shape: []int{a.Rank, a.In}, Data: aT}
+		tensors[keyB] = safetensors.Tensor{Name: keyB, Dtype: "F32", Shape: []int{a.Out, a.Rank}, Data: bT}
+	}
+	for i, a := range m.Attn {
+		put(i, "attn.c_attn", a)
+	}
+	for i, a := range m.FC {
+		put(i, "mlp.c_fc", a)
+	}
+	return safetensors.WriteFileMeta(filepath.Join(dir, "adapter_model.safetensors"), tensors, map[string]string{"format": "pt"})
 }
 
 type optimizerDump struct {

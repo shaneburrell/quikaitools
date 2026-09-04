@@ -3,7 +3,9 @@ package train_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/shaneburrell/quikaitools/internal/train"
 )
@@ -22,6 +24,42 @@ func TestMessagesJSONL(t *testing.T) {
 	total, issues, err := train.ValidateMessagesJSONL(path)
 	if err != nil || total != 1 || len(issues) != 0 {
 		t.Fatalf("total=%d issues=%v err=%v", total, issues, err)
+	}
+}
+
+// A bare non-JSON token used to make the decoder loop forever; it must be
+// reported as one issue on the right line and the scan must terminate.
+func TestValidateMessagesJSONLMalformedTerminates(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "bad.jsonl")
+	body := "not-json\n" +
+		`{"messages":[{"role":"user","content":"hi"},{"role":"assistant","content":"yo"}]}` + "\n" +
+		"\n" +
+		`{"messages":[{"role":"user"}]}` + "\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	var total int
+	var issues []string
+	var err error
+	go func() {
+		total, issues, err = train.ValidateMessagesJSONL(path)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("ValidateMessagesJSONL did not terminate on malformed input")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 2 {
+		t.Fatalf("total=%d want 2 (blank line skipped, bad token not counted)", total)
+	}
+	if len(issues) != 2 || !strings.HasPrefix(issues[0], "line 1: invalid json") || !strings.HasPrefix(issues[1], "line 4:") {
+		t.Fatalf("issues=%v", issues)
 	}
 }
 

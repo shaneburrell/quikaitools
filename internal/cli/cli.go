@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/shaneburrell/quikaitools/catalog"
 	"github.com/shaneburrell/quikaitools/internal/backend"
@@ -21,7 +22,7 @@ import (
 	"github.com/shaneburrell/quikaitools/internal/zoo"
 )
 
-const Version = "0.4.0"
+const Version = "0.5.0"
 
 func outf(w io.Writer, format string, a ...any) {
 	_, _ = fmt.Fprintf(w, format, a...)
@@ -65,6 +66,77 @@ func parsePosFloat(v, flag string, stderr io.Writer) (float64, bool) {
 		return 0, false
 	}
 	return f, true
+}
+
+func parseNonNegInt(v, flag string, stderr io.Writer) (int, bool) {
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		outln(stderr, err)
+		return 0, false
+	}
+	if n < 0 {
+		outf(stderr, "%s must be >= 0\n", flag)
+		return 0, false
+	}
+	return n, true
+}
+
+func parseNonNegFloat(v, flag string, stderr io.Writer) (float64, bool) {
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		outln(stderr, err)
+		return 0, false
+	}
+	if f < 0 {
+		outf(stderr, "%s must be >= 0\n", flag)
+		return 0, false
+	}
+	return f, true
+}
+
+func parseUnitInterval(v, flag string, stderr io.Writer) (float64, bool) {
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		outln(stderr, err)
+		return 0, false
+	}
+	if f < 0 || f > 1 {
+		outf(stderr, "%s must be between 0 and 1\n", flag)
+		return 0, false
+	}
+	return f, true
+}
+
+func parseInt64Arg(v, flag string, stderr io.Writer) (int64, bool) {
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil {
+		outf(stderr, "%s: %v\n", flag, err)
+		return 0, false
+	}
+	return n, true
+}
+
+// boolFromFlag parses --flag (true), --flag=true, and --flag=false.
+func boolFromFlag(arg string, stderr io.Writer) (bool, bool) {
+	if i := strings.IndexByte(arg, '='); i >= 0 {
+		name, raw := arg[:i], arg[i+1:]
+		switch strings.ToLower(raw) {
+		case "true", "1":
+			return true, true
+		case "false", "0":
+			return false, true
+		default:
+			outf(stderr, "%s wants true or false\n", name)
+			return false, false
+		}
+	}
+	return true, true
+}
+
+func noteStubEngine(stderr io.Writer, engine string) {
+	if strings.Contains(engine, "stub") {
+		outf(stderr, "note: %s is a stub; ONNX runtime not linked\n", engine)
+	}
 }
 
 func doctorUsage() string {
@@ -118,13 +190,16 @@ Usage:
   %s
   quikaitools catalog [--task TASK] [--machine v100|halo|mac|cpu] [--catalog DIR]
   quikaitools pull [HF_REPO|catalog-id] [--cache DIR]
-  quikaitools train lora|qlora --model DIR --data FILE [options]
+  quikaitools train lora|qlora --model DIR --data FILE [--steps N] [--rank R] [--lr F]
+      [--out DIR] [--accum N] [--resume DIR] [--profile KIND] [--eval-every N]
+      [--smoke] [--seq N] [--seed N] [--mask-prompt]
   quikaitools generate --model DIR [--adapter DIR] [--prompt TEXT] [--tokens N]
       [--template chatml|raw] [--messages JSON]
-  quikaitools generate --gguf FILE [--prompt TEXT] [--tokens N] [--profile KIND]
-  quikaitools embed --model DIR --text TEXT
-  quikaitools embed --vision --model DIR --image FILE
-  quikaitools transcribe --model DIR --audio FILE
+      [--temperature F] [--top-k N] [--top-p F] [--seed N] [--stop-eos]
+  quikaitools generate --gguf FILE [--prompt TEXT] [--tokens N] [--profile KIND] [--timeout DURATION]
+  quikaitools embed --model DIR --text TEXT [--allow-stub]
+  quikaitools embed --vision --model DIR --image FILE [--normalize imagenet|clip] [--allow-stub]
+  quikaitools transcribe --model DIR --audio FILE [--allow-stub]
   quikaitools export merge|gguf|modelfile [flags]
   quikaitools validate-sft --path FILE.jsonl
   quikaitools version
@@ -326,7 +401,7 @@ func cmdPull(args []string, stdout, stderr io.Writer) int {
 
 func cmdTrain(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" {
-		outln(stdout, "quikaitools train lora|qlora --model DIR --data FILE [--steps N] [--rank R] [--lr F] [--out DIR] [--accum N] [--resume DIR] [--profile KIND] [--eval-every N] [--smoke]")
+		outln(stdout, "quikaitools train lora|qlora --model DIR --data FILE [--steps N] [--rank R] [--lr F] [--out DIR] [--accum N] [--resume DIR] [--profile KIND] [--eval-every N] [--smoke] [--seq N] [--seed N] [--mask-prompt]")
 		return 0
 	}
 	recipe := args[0]
@@ -420,6 +495,32 @@ func cmdTrain(args []string, stdout, stderr io.Writer) int {
 			opt.LR = f
 		case "--smoke":
 			smoke = true
+		case "--seq":
+			v, ok := nextArg(args, &i, stderr)
+			if !ok {
+				return 2
+			}
+			n, ok := parsePosInt(v, "--seq", stderr)
+			if !ok {
+				return 2
+			}
+			opt.SeqLen = n
+		case "--seed":
+			v, ok := nextArg(args, &i, stderr)
+			if !ok {
+				return 2
+			}
+			n, ok := parseInt64Arg(v, "--seed", stderr)
+			if !ok {
+				return 2
+			}
+			opt.Seed = n
+		case "--mask-prompt", "--mask-prompt=true", "--mask-prompt=false":
+			b, ok := boolFromFlag(args[i], stderr)
+			if !ok {
+				return 2
+			}
+			opt.MaskPrompt = b
 		default:
 			outf(stderr, "unknown flag %s\n", args[i])
 			return 2
@@ -458,6 +559,12 @@ func cmdGenerate(args []string, stdout, stderr io.Writer) int {
 	var model, adapter, gguf, prompt, template, messagesJSON string
 	tokens := 16
 	profile := backend.KindAuto
+	var temperature float64
+	var topK int
+	var topP float64
+	var seed int64
+	var timeout time.Duration
+	var stopEOS, tempSet, topKSet, topPSet, seedSet bool
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--model":
@@ -512,8 +619,69 @@ func cmdGenerate(args []string, stdout, stderr io.Writer) int {
 				return 2
 			}
 			profile = backend.Kind(v)
+		case "--temperature":
+			v, ok := nextArg(args, &i, stderr)
+			if !ok {
+				return 2
+			}
+			f, ok := parseNonNegFloat(v, "--temperature", stderr)
+			if !ok {
+				return 2
+			}
+			temperature = f
+			tempSet = true
+		case "--top-k":
+			v, ok := nextArg(args, &i, stderr)
+			if !ok {
+				return 2
+			}
+			n, ok := parseNonNegInt(v, "--top-k", stderr)
+			if !ok {
+				return 2
+			}
+			topK = n
+			topKSet = true
+		case "--top-p":
+			v, ok := nextArg(args, &i, stderr)
+			if !ok {
+				return 2
+			}
+			f, ok := parseUnitInterval(v, "--top-p", stderr)
+			if !ok {
+				return 2
+			}
+			topP = f
+			topPSet = true
+		case "--seed":
+			v, ok := nextArg(args, &i, stderr)
+			if !ok {
+				return 2
+			}
+			n, ok := parseInt64Arg(v, "--seed", stderr)
+			if !ok {
+				return 2
+			}
+			seed = n
+			seedSet = true
+		case "--stop-eos", "--stop-eos=true", "--stop-eos=false":
+			b, ok := boolFromFlag(args[i], stderr)
+			if !ok {
+				return 2
+			}
+			stopEOS = b
+		case "--timeout":
+			v, ok := nextArg(args, &i, stderr)
+			if !ok {
+				return 2
+			}
+			d, err := time.ParseDuration(v)
+			if err != nil {
+				outln(stderr, err)
+				return 2
+			}
+			timeout = d
 		case "-h", "--help":
-			outln(stdout, "quikaitools generate --model DIR [--adapter DIR] | --gguf FILE [--prompt TEXT] [--template chatml|raw] [--messages JSON] [--tokens N]")
+			outln(stdout, "quikaitools generate --model DIR [--adapter DIR] | --gguf FILE [--prompt TEXT] [--template chatml|raw] [--messages JSON] [--tokens N] [--temperature F] [--top-k N] [--top-p F] [--seed N] [--stop-eos] [--timeout DURATION]")
 			return 0
 		default:
 			outf(stderr, "unknown flag %s\n", args[i])
@@ -544,12 +712,16 @@ func cmdGenerate(args []string, stdout, stderr io.Writer) int {
 		prompt = "Hello"
 	}
 	if gguf != "" {
+		if tempSet || topKSet || topPSet || stopEOS || seedSet {
+			outln(stderr, "generate --gguf does not support --temperature, --top-k, --top-p, --seed, or --stop-eos")
+			return 2
+		}
 		p, err := backend.Detect(profile, nil)
 		if err != nil {
 			outln(stderr, err)
 			return 1
 		}
-		out, err := infer.GenerateGGUF(infer.GenerateGGUFOptions{Model: gguf, Prompt: prompt, Tokens: tokens, Profile: p})
+		out, err := infer.GenerateGGUF(infer.GenerateGGUFOptions{Model: gguf, Prompt: prompt, Tokens: tokens, Profile: p, Timeout: timeout})
 		if err != nil {
 			outln(stderr, err)
 			return 1
@@ -585,18 +757,39 @@ func cmdGenerate(args []string, stdout, stderr io.Writer) int {
 	if len(ids) == 0 {
 		ids = []int{0}
 	}
-	out := m.Generate(ids, tokens)
-	outln(stdout, tok.Decode(out))
+	useSample := temperature > 0 || topKSet || topPSet || stopEOS
+	if useSample {
+		so := peft.SampleOptions{
+			Temperature: temperature,
+			TopK:        topK,
+			TopP:        topP,
+			EOS:         -1,
+			Seed:        seed,
+		}
+		if stopEOS {
+			so.EOS = tok.EOSID
+		}
+		outln(stdout, tok.Decode(m.Sample(ids, tokens, so)))
+		return 0
+	}
+	outln(stdout, tok.Decode(m.Generate(ids, tokens)))
 	return 0
 }
 
 func cmdEmbed(args []string, stdout, stderr io.Writer) int {
 	visionMode := false
-	var model, text, image string
+	allowStub := true
+	var model, text, image, normalize string
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--vision":
 			visionMode = true
+		case "--normalize":
+			v, ok := nextArg(args, &i, stderr)
+			if !ok {
+				return 2
+			}
+			normalize = v
 		case "--model":
 			v, ok := nextArg(args, &i, stderr)
 			if !ok {
@@ -615,8 +808,14 @@ func cmdEmbed(args []string, stdout, stderr io.Writer) int {
 				return 2
 			}
 			image = v
+		case "--allow-stub", "--allow-stub=true", "--allow-stub=false":
+			b, ok := boolFromFlag(args[i], stderr)
+			if !ok {
+				return 2
+			}
+			allowStub = b
 		case "-h", "--help":
-			outln(stdout, "quikaitools embed --model DIR --text TEXT | --vision --model DIR --image FILE")
+			outln(stdout, "quikaitools embed --model DIR --text TEXT | --vision --model DIR --image FILE [--normalize imagenet|clip] [--allow-stub]")
 			return 0
 		default:
 			outf(stderr, "unknown flag %s\n", args[i])
@@ -632,11 +831,12 @@ func cmdEmbed(args []string, stdout, stderr io.Writer) int {
 			outln(stderr, "embed --vision requires --image")
 			return 2
 		}
-		v, eng, err := infer.EmbedVision(infer.EmbedVisionOptions{ModelDir: model, Image: image, Size: 224})
+		v, eng, err := infer.EmbedVision(infer.EmbedVisionOptions{ModelDir: model, Image: image, Size: 224, Normalize: normalize, StrictStub: !allowStub})
 		if err != nil {
 			outln(stderr, err)
 			return 1
 		}
+		noteStubEngine(stderr, eng)
 		outf(stdout, "engine=%s dim=%d\n", eng, len(v))
 		outln(stdout, formatVec(v, 8))
 		return 0
@@ -645,11 +845,12 @@ func cmdEmbed(args []string, stdout, stderr io.Writer) int {
 		outln(stderr, "embed requires --text (or --vision --image)")
 		return 2
 	}
-	v, eng, err := infer.EmbedText(infer.EmbedTextOptions{ModelDir: model, Text: text})
+	v, eng, err := infer.EmbedText(infer.EmbedTextOptions{ModelDir: model, Text: text, StrictStub: !allowStub})
 	if err != nil {
 		outln(stderr, err)
 		return 1
 	}
+	noteStubEngine(stderr, eng)
 	outf(stdout, "engine=%s dim=%d\n", eng, len(v))
 	outln(stdout, formatVec(v, 8))
 	return 0
@@ -657,6 +858,7 @@ func cmdEmbed(args []string, stdout, stderr io.Writer) int {
 
 func cmdTranscribe(args []string, stdout, stderr io.Writer) int {
 	var model, audioPath string
+	allowStub := true
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--model":
@@ -671,8 +873,14 @@ func cmdTranscribe(args []string, stdout, stderr io.Writer) int {
 				return 2
 			}
 			audioPath = v
+		case "--allow-stub", "--allow-stub=true", "--allow-stub=false":
+			b, ok := boolFromFlag(args[i], stderr)
+			if !ok {
+				return 2
+			}
+			allowStub = b
 		case "-h", "--help":
-			outln(stdout, "quikaitools transcribe --model DIR --audio FILE")
+			outln(stdout, "quikaitools transcribe --model DIR --audio FILE [--allow-stub]")
 			return 0
 		default:
 			outf(stderr, "unknown flag %s\n", args[i])
@@ -683,11 +891,12 @@ func cmdTranscribe(args []string, stdout, stderr io.Writer) int {
 		outln(stderr, "transcribe requires --model and --audio")
 		return 2
 	}
-	text, eng, err := infer.Transcribe(infer.TranscribeOptions{ModelDir: model, Audio: audioPath})
+	text, eng, err := infer.Transcribe(infer.TranscribeOptions{ModelDir: model, Audio: audioPath, StrictStub: !allowStub})
 	if err != nil {
 		outln(stderr, err)
 		return 1
 	}
+	noteStubEngine(stderr, eng)
 	outf(stdout, "engine=%s\n%s\n", eng, text)
 	return 0
 }
@@ -858,6 +1067,7 @@ func cmdExportGGUF(args []string, stdout, stderr io.Writer) int {
 
 func cmdExportModelfile(args []string, stdout, stderr io.Writer) int {
 	template, gguf, out := "", "", ""
+	force := false
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--template":
@@ -878,8 +1088,14 @@ func cmdExportModelfile(args []string, stdout, stderr io.Writer) int {
 				return 2
 			}
 			out = v
+		case "--force", "--force=true", "--force=false":
+			b, ok := boolFromFlag(args[i], stderr)
+			if !ok {
+				return 2
+			}
+			force = b
 		case "-h", "--help":
-			outln(stdout, "quikaitools export modelfile --gguf FILE --out FILE [--template FILE]")
+			outln(stdout, "quikaitools export modelfile --gguf FILE --out FILE [--template FILE] [--force]")
 			return 0
 		default:
 			outf(stderr, "unknown flag %s\n", args[i])
@@ -890,7 +1106,7 @@ func cmdExportModelfile(args []string, stdout, stderr io.Writer) int {
 		outln(stderr, "export modelfile requires --gguf and --out")
 		return 2
 	}
-	if err := exportx.WriteModelfile(template, gguf, out); err != nil {
+	if err := exportx.WriteModelfileOpts(template, gguf, out, force); err != nil {
 		outln(stderr, err)
 		return 1
 	}

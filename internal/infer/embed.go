@@ -77,16 +77,27 @@ type EmbedVisionOptions struct {
 	ModelDir string
 	Image    string
 	Size     int
+	// Normalize selects the RGB mean/std preset: "imagenet" (default) or "clip".
+	Normalize string
 	// StrictStub opt-in fail-closed for stub engines. See EmbedTextOptions.
 	StrictStub bool
 }
 
 // EmbedVision preprocesses the image; returns channel means + spatial stats (stub) or notes onnx.
 func EmbedVision(opt EmbedVisionOptions) ([]float32, string, error) {
-	ten, err := vision.LoadAndPreprocess(opt.Image, opt.Size)
+	norm := vision.ImageNetNorm
+	if opt.Normalize != "" {
+		n, err := vision.ParseNormalization(opt.Normalize)
+		if err != nil {
+			return nil, "", err
+		}
+		norm = n
+	}
+	tp, err := vision.LoadAndPreprocessOpts(opt.Image, vision.Options{Size: opt.Size, Norm: norm})
 	if err != nil {
 		return nil, "", err
 	}
+	ten := *tp
 	// Global average pool → 3 dims, then pad/project to 64 with spatial std
 	out := make([]float32, 64)
 	hw := ten.H * ten.W

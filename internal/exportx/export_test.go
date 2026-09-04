@@ -90,6 +90,49 @@ func TestMergeGPT2LoRAMissingTokenizer(t *testing.T) {
 	}
 }
 
+func TestMergeGPT2LoRAPEFTFormat(t *testing.T) {
+	cfg := gpt2.Config{NEmbd: 16, NHead: 4, NLayer: 2, NPositions: 32, VocabSize: 32, LayerNormEps: 1e-5, NInner: 32}
+	base := gpt2.NewRandom(cfg, 3)
+	modelDir := testart.Path(t, "exportx-peft-model")
+	if err := gpt2.WriteDir(modelDir, base); err != nil {
+		t.Fatal(err)
+	}
+	base2, err := gpt2.LoadDir(modelDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := peft.Wrap(base2, peft.Config{Rank: 2, Alpha: 4, LR: 1e-2})
+	for i := range m.Attn[0].B {
+		m.Attn[0].B[i] = 0.02
+	}
+	adapterDir := testart.Path(t, "exportx-peft-adapter")
+	if err := m.Save(adapterDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(adapterDir, "adapter.json")); err != nil {
+		t.Fatal(err)
+	}
+	toks := []int{1, 2, 3, 4}
+	want := append([]float32(nil), m.ForwardLogits(toks)...)
+	out := testart.Path(t, "exportx-peft-merged")
+	if err := exportx.MergeGPT2LoRA(modelDir, adapterDir, out); err != nil {
+		t.Fatal(err)
+	}
+	merged, err := gpt2.LoadDir(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := peft.BaseOnly(merged).ForwardLogits(toks)
+	if len(got) != len(want) {
+		t.Fatalf("len %d vs %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] && (got[i]-want[i] > 1e-5 || want[i]-got[i] > 1e-5) {
+			t.Fatalf("logit[%d]: merged=%v lora=%v", i, got[i], want[i])
+		}
+	}
+}
+
 func TestWriteModelfileOptsForce(t *testing.T) {
 	dir := t.TempDir()
 	out := filepath.Join(dir, "Modelfile")

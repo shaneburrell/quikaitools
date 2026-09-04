@@ -1,6 +1,7 @@
 package train
 
 import (
+	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -123,15 +124,19 @@ func ValidateMessagesJSONL(path string) (total int, issues []string, err error) 
 		return 0, nil, err
 	}
 	defer func() { _ = f.Close() }()
-	dec := json.NewDecoder(f)
+	// Scan line by line: a json.Decoder does not advance past an invalid token,
+	// so decoding in a loop would spin forever on malformed input.
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 1<<20), 64<<20)
 	line := 0
-	for {
+	for sc.Scan() {
 		line++
+		raw := strings.TrimSpace(sc.Text())
+		if raw == "" {
+			continue
+		}
 		var obj map[string]any
-		if err := dec.Decode(&obj); err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
+		if err := json.Unmarshal([]byte(raw), &obj); err != nil {
 			issues = append(issues, fmt.Sprintf("line %d: invalid json (%v)", line, err))
 			continue
 		}
@@ -162,6 +167,9 @@ func ValidateMessagesJSONL(path string) (total int, issues []string, err error) 
 		if !roles["user"] || !roles["assistant"] {
 			issues = append(issues, fmt.Sprintf("line %d: need user and assistant roles", line))
 		}
+	}
+	if err := sc.Err(); err != nil {
+		return total, issues, err
 	}
 	return total, issues, nil
 }

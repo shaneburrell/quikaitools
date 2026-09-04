@@ -14,16 +14,17 @@ quikaitools catalog --machine halo --task generate
 quikaitools pull tiny-random-gpt2
 quikaitools train lora --model ~/.cache/quikaitools/models/hf-internal-testing/tiny-random-gpt2 \
   --data testdata/fixtures/stories.txt --steps 30 --rank 4 --accum 2 --profile mac \
-  --out testdata/artifacts/adapter-lora
-quikaitools generate --model … --adapter testdata/artifacts/adapter-lora --prompt "Once"
-quikaitools generate --gguf FILE --prompt "Hi" --tokens 16
-quikaitools train qlora --model … --data … --steps 20
-quikaitools embed --model … --text "hello"
+  --seq 32 --seed 1 --out testdata/artifacts/adapter-lora
+quikaitools generate --model … --adapter testdata/artifacts/adapter-lora --prompt "Once" \
+  --temperature 0.8 --top-k 40 --top-p 0.9 --seed 1 --stop-eos
+quikaitools generate --gguf FILE --prompt "Hi" --tokens 16 --timeout 30s
+quikaitools train qlora --model … --data … --steps 20 --mask-prompt
+quikaitools embed --model … --text "hello"              # --allow-stub=false fails closed on ONNX stubs
 quikaitools embed --vision --model … --image testdata/fixtures/red.png
 quikaitools transcribe --model … --audio testdata/fixtures/tone.wav
 quikaitools export merge --model DIR --adapter DIR --out DIR
 quikaitools export gguf --model DIR --out FILE.gguf
-quikaitools export modelfile --gguf FILE --out Modelfile
+quikaitools export modelfile --gguf FILE --out Modelfile   # --force to overwrite
 quikaitools validate-sft --path FILE.jsonl
 quikaitools version          # also --version
 ```
@@ -204,7 +205,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 **v0.4** — `export merge|gguf|modelfile`, messages JSONL train + `validate-sft`, ChatML `--template` / `--messages` on `generate`. ONNX remains stub until Hugot/ORT is linked.
 
-**v0.5 (in progress)** — real GPT-2 byte-level BPE; optimizer state on resume; loss masking for messages JSONL; sampling flags; CLIP normalization preset; Whisper-exact log-mel; `HF_TOKEN` / `HF_ENDPOINT` / `HF_HOME`; stubs fail closed unless `--allow-stub`; HF PEFT adapter format.
+**v0.5** — real GPT-2 byte-level BPE; optimizer state on `--resume`; `--mask-prompt` loss masking for messages JSONL; `--seed`; sampling flags (`--temperature` / `--top-k` / `--top-p` / `--stop-eos`); `embed --vision --normalize clip`; Whisper-exact log-mel (`LogMelWhisper`); `HF_TOKEN` / `HF_ENDPOINT` / `HF_HOME`; `--allow-stub=false` fails closed on stub engines; HF PEFT `adapter_config.json` + `adapter_model.safetensors`; safetensors F16/BF16 read; CI runs gofmt, tidy, and golangci-lint with SHA-pinned actions.
 
 **Next**
 
