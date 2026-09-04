@@ -128,6 +128,9 @@ func GenerateGGUF(opt GenerateGGUFOptions) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, args...)
+	// After the context kills the process, do not wait forever on children
+	// that still hold the stdout/stderr pipes open.
+	cmd.WaitDelay = 2 * time.Second
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

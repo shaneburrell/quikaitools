@@ -518,7 +518,9 @@ func TestGenerateGGUFFakeLlama(t *testing.T) {
 	}
 
 	slow := filepath.Join(binDir, "slow-llama")
-	if err := os.WriteFile(slow, []byte("#!/bin/sh\nsleep 2\necho should-not-see\n"), 0o755); err != nil {
+	// PATH is restricted to binDir above, so use an absolute path for sleep;
+	// otherwise `sleep` is not found and the script echoes immediately.
+	if err := os.WriteFile(slow, []byte("#!/bin/sh\n/bin/sleep 2\necho should-not-see\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("QUIKAITOOLS_LLAMA", slow)
