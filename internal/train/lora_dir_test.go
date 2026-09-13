@@ -96,3 +96,46 @@ func TestRunLoRAMaskPrompt(t *testing.T) {
 		}
 	}
 }
+
+func TestMaskPromptUsesJointEncode(t *testing.T) {
+	dir := t.TempDir()
+	base := gpt2.NewRandom(gpt2.Config{NEmbd: 8, NHead: 2, NLayer: 1, NPositions: 32, VocabSize: 32, NInner: 16}, 3)
+	if err := gpt2.WriteDir(dir, base); err != nil {
+		t.Fatal(err)
+	}
+	tok, err := gpt2.LoadTokenizer(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt := "sys\n\nhello\n\n"
+	completion := "world"
+	joint := tok.Encode(prompt + completion)
+	ids, mask := encodeMaskedSFT(tok, prompt, completion)
+	if !equalInts(ids, joint) {
+		t.Fatalf("masked ids=%v want joint %v", ids, joint)
+	}
+	if len(mask) != len(ids) {
+		t.Fatalf("mask len %d ids %d", len(mask), len(ids))
+	}
+	masked := 0
+	for _, m := range mask {
+		if m {
+			masked++
+		}
+	}
+	if masked == 0 {
+		t.Fatal("expected completion tokens to be masked")
+	}
+}
+
+func equalInts(a, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}

@@ -121,9 +121,21 @@ func TestGetAndFilesAndSource(t *testing.T) {
 	if len(onnx) < 2 {
 		t.Fatalf("onnx=%v", onnx)
 	}
+	hasONNX := false
+	for _, f := range onnx {
+		if strings.HasSuffix(strings.ToLower(f), ".onnx") {
+			hasONNX = true
+			break
+		}
+	}
+	if !hasONNX {
+		t.Fatalf("onnx file list missing weights: %v", onnx)
+	}
 	gguf := FilesForModel(Model{Formats: []string{"gguf"}})
-	if len(gguf) == 0 {
-		t.Fatal("gguf")
+	for _, f := range gguf {
+		if strings.EqualFold(f, "README.md") {
+			t.Fatal("README.md is not a GGUF weight")
+		}
 	}
 }
 

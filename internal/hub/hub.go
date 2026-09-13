@@ -117,7 +117,12 @@ func (c *Client) PullOpts(repo string, files []string, skipOptional404 bool) (st
 		return "", err
 	}
 	got := 0
+	gotWeight := 0
+	wantedWeight := false
 	for _, name := range files {
+		if isWeightFile(name) {
+			wantedWeight = true
+		}
 		dest := filepath.Join(dir, name)
 		if rel, err := filepath.Rel(dir, dest); err != nil || strings.HasPrefix(rel, "..") {
 			return dir, fmt.Errorf("hub: refused path %q", name)
@@ -126,6 +131,9 @@ func (c *Client) PullOpts(repo string, files []string, skipOptional404 bool) (st
 		// (verified download) or the file is a legacy download (marker absent).
 		if cacheValid(dest) {
 			got++
+			if isWeightFile(name) {
+				gotWeight++
+			}
 			continue
 		}
 		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
@@ -140,11 +148,25 @@ func (c *Client) PullOpts(repo string, files []string, skipOptional404 bool) (st
 			return dir, fmt.Errorf("%s: %w", name, err)
 		}
 		got++
+		if isWeightFile(name) {
+			gotWeight++
+		}
 	}
 	if got == 0 {
 		return dir, fmt.Errorf("hub: no files downloaded for %s", repo)
 	}
+	if wantedWeight && gotWeight == 0 {
+		return dir, fmt.Errorf("hub: no model weights downloaded for %s", repo)
+	}
 	return dir, nil
+}
+
+func isWeightFile(name string) bool {
+	n := strings.ToLower(name)
+	return strings.HasSuffix(n, ".safetensors") ||
+		strings.HasSuffix(n, ".onnx") ||
+		strings.HasSuffix(n, ".gguf") ||
+		strings.HasSuffix(n, ".bin")
 }
 
 // cacheValid reports whether dest is a usable cache hit.
@@ -223,7 +245,7 @@ func (c *Client) downloadOnce(url, dest string) (retry bool, err error) {
 	if err != nil {
 		return false, err
 	}
-	req.Header.Set("User-Agent", "quikaitools/0.1")
+	req.Header.Set("User-Agent", "quikaitools/0.5.1")
 	if tok := hubToken(); tok != "" {
 		req.Header.Set("Authorization", "Bearer "+tok)
 	}

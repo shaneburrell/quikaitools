@@ -207,6 +207,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 **v0.5** — real GPT-2 byte-level BPE; optimizer state on `--resume`; `--mask-prompt` loss masking for messages JSONL; `--seed`; sampling flags (`--temperature` / `--top-k` / `--top-p` / `--stop-eos`); `embed --vision --normalize clip`; Whisper-exact log-mel (`LogMelWhisper`); `HF_TOKEN` / `HF_ENDPOINT` / `HF_HOME`; `--allow-stub=false` fails closed on stub engines; HF PEFT `adapter_config.json` + `adapter_model.safetensors`; safetensors F16/BF16 read; CI runs gofmt, tidy, and golangci-lint with SHA-pinned actions.
 
+**v0.5.1** — Go 1.27.1 toolchain; maintained `go.yaml.in/yaml/v3`; current SHA-pinned GitHub Actions. QLoRA merge uses dequantized weights; Hub pull requires real ONNX/GGUF weights; `--resume` keeps checkpoint rank/LR; generate no longer panics on empty context; joint BPE for `--mask-prompt`; LoadDir tensor-size checks; safetensors scalar `shape: []`; empty Whisper-mel and zero-rate WAV error instead of lying or panicking.
+
 **Next**
 
 - Real ONNX via Hugot/ORT; DPO

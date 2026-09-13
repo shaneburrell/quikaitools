@@ -242,3 +242,33 @@ func TestPEFTSubsetLayersStayZeroB(t *testing.T) {
 		t.Fatal("present adapter B should be restored")
 	}
 }
+
+func TestLoadPEFTZeroKeysErrors(t *testing.T) {
+	m := trainedLoRA(t, 4)
+	dir := t.TempDir()
+	if err := m.Save(dir); err != nil {
+		t.Fatal(err)
+	}
+	all, err := safetensors.LoadFile(filepath.Join(dir, "adapter_model.safetensors"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var one safetensors.Tensor
+	for _, tns := range all {
+		one = tns
+		break
+	}
+	renamed := map[string]safetensors.Tensor{
+		"base_model.model.model.layers.0.self_attn.q_proj.lora_A.weight": one,
+	}
+	if err := safetensors.WriteFileMeta(filepath.Join(dir, "adapter_model.safetensors"), renamed, map[string]string{"format": "pt"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(dir, "adapter.json")); err != nil {
+		t.Fatal(err)
+	}
+	base := gpt2.NewRandom(tinyCfg(), 4)
+	if _, err := peft.Load(base, dir); err == nil {
+		t.Fatal("expected error when no GPT-2 LoRA keys match")
+	}
+}

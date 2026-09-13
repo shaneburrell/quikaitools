@@ -60,7 +60,7 @@ func LoadDir(dir string) (*Model, error) {
 	if cfg.LayerNormEps == 0 {
 		cfg.LayerNormEps = 1e-5
 	}
-	if cfg.NEmbd == 0 || cfg.NHead == 0 || cfg.NLayer == 0 {
+	if cfg.NEmbd == 0 || cfg.NHead == 0 || cfg.NLayer == 0 || cfg.NPositions <= 0 || cfg.VocabSize <= 0 {
 		return nil, fmt.Errorf("gpt2: incomplete config")
 	}
 	if cfg.NEmbd%cfg.NHead != 0 {
@@ -110,7 +110,68 @@ func LoadDir(dir string) (*Model, error) {
 	if loadErr != nil {
 		return nil, loadErr
 	}
+	d, v, tmax := cfg.NEmbd, cfg.VocabSize, cfg.NPositions
+	inn := m.Cfg.Inner()
+	if err := checkLen("transformer.wte.weight", m.WTE, v*d); err != nil {
+		return nil, err
+	}
+	if err := checkLen("transformer.wpe.weight", m.WPE, tmax*d); err != nil {
+		return nil, err
+	}
+	if err := checkLen("transformer.ln_f.weight", m.LNF.W, d); err != nil {
+		return nil, err
+	}
+	if err := checkLen("transformer.ln_f.bias", m.LNF.B, d); err != nil {
+		return nil, err
+	}
+	for i := range m.Blocks {
+		p := fmt.Sprintf("transformer.h.%d.", i)
+		b := m.Blocks[i]
+		if err := checkLen(p+"ln_1.weight", b.LN1.W, d); err != nil {
+			return nil, err
+		}
+		if err := checkLen(p+"ln_1.bias", b.LN1.B, d); err != nil {
+			return nil, err
+		}
+		if err := checkLen(p+"ln_2.weight", b.LN2.W, d); err != nil {
+			return nil, err
+		}
+		if err := checkLen(p+"ln_2.bias", b.LN2.B, d); err != nil {
+			return nil, err
+		}
+		if err := checkLen(p+"attn.c_attn.weight", b.AttnW, d*3*d); err != nil {
+			return nil, err
+		}
+		if err := checkLen(p+"attn.c_attn.bias", b.AttnB, 3*d); err != nil {
+			return nil, err
+		}
+		if err := checkLen(p+"attn.c_proj.weight", b.ProjW, d*d); err != nil {
+			return nil, err
+		}
+		if err := checkLen(p+"attn.c_proj.bias", b.ProjB, d); err != nil {
+			return nil, err
+		}
+		if err := checkLen(p+"mlp.c_fc.weight", b.FcW, d*inn); err != nil {
+			return nil, err
+		}
+		if err := checkLen(p+"mlp.c_fc.bias", b.FcB, inn); err != nil {
+			return nil, err
+		}
+		if err := checkLen(p+"mlp.c_proj.weight", b.FcProjW, inn*d); err != nil {
+			return nil, err
+		}
+		if err := checkLen(p+"mlp.c_proj.bias", b.FcProjB, d); err != nil {
+			return nil, err
+		}
+	}
 	return m, nil
+}
+
+func checkLen(name string, data []float32, want int) error {
+	if len(data) != want {
+		return fmt.Errorf("gpt2: %s length %d want %d", name, len(data), want)
+	}
+	return nil
 }
 
 // NewRandom is a tiny randomly-initialized model for tests (no Hub).

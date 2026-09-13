@@ -68,6 +68,29 @@ func TestLoadFile(t *testing.T) {
 	}
 }
 
+func TestParseScalarEmptyShape(t *testing.T) {
+	raw := make([]byte, 4)
+	binary.LittleEndian.PutUint32(raw, math.Float32bits(3.5))
+	hdr, err := json.Marshal(map[string]any{
+		"s": map[string]any{"dtype": "F32", "shape": []int{}, "data_offsets": []int{0, 4}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob := make([]byte, 8+len(hdr)+4)
+	binary.LittleEndian.PutUint64(blob[:8], uint64(len(hdr)))
+	copy(blob[8:], hdr)
+	copy(blob[8+len(hdr):], raw)
+	got, err := Parse(blob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := got["s"]
+	if len(s.Data) != 1 || s.Data[0] != 3.5 {
+		t.Fatalf("%+v", s)
+	}
+}
+
 func TestParseMalformed(t *testing.T) {
 	f32 := make([]byte, 4)
 	binary.LittleEndian.PutUint32(f32, math.Float32bits(1))

@@ -416,6 +416,57 @@ func TestTrainResumeStepAndOptimizer(t *testing.T) {
 	}
 }
 
+func TestTrainResumeKeepsRankAndLR(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteTiny(t, dir)
+	data := filepath.Join(dir, "d.txt")
+	if err := os.WriteFile(data, []byte("aaaaaaa bbbbbbb ccccccc ddddddd eeeeeee"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a := filepath.Join(dir, "A")
+	b := filepath.Join(dir, "B")
+	var out, errb bytes.Buffer
+	code := Main([]string{"quikaitools", "train", "lora", "--model", dir, "--data", data, "--steps", "2", "--rank", "8", "--lr", "1e-4", "--out", a, "--profile", "cpu"}, &out, &errb)
+	if code != 0 {
+		t.Fatalf("train A code=%d err=%s out=%s", code, errb.String(), out.String())
+	}
+	out.Reset()
+	errb.Reset()
+	code = Main([]string{"quikaitools", "train", "lora", "--model", dir, "--data", data, "--steps", "2", "--resume", a, "--out", b, "--profile", "cpu"}, &out, &errb)
+	if code != 0 {
+		t.Fatalf("resume without rank/lr code=%d err=%s out=%s", code, errb.String(), out.String())
+	}
+	raw, err := os.ReadFile(filepath.Join(b, "adapter.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var file struct {
+		LoRA struct {
+			Rank int     `json:"rank"`
+			LR   float64 `json:"lr"`
+		} `json:"lora"`
+	}
+	if err := json.Unmarshal(raw, &file); err != nil {
+		t.Fatal(err)
+	}
+	if file.LoRA.Rank != 8 {
+		t.Fatalf("resume rank=%d want 8", file.LoRA.Rank)
+	}
+	if file.LoRA.LR != 1e-4 {
+		t.Fatalf("resume lr=%g want 1e-4", file.LoRA.LR)
+	}
+	out.Reset()
+	errb.Reset()
+	c := filepath.Join(dir, "C")
+	code = Main([]string{"quikaitools", "train", "lora", "--model", dir, "--data", data, "--steps", "1", "--rank", "4", "--resume", a, "--out", c, "--profile", "cpu"}, &out, &errb)
+	if code == 0 {
+		t.Fatal("expected rank mismatch on resume --rank 4")
+	}
+	if !strings.Contains(errb.String(), "rank") {
+		t.Fatalf("want rank error, got %s", errb.String())
+	}
+}
+
 func TestTrainMaskPromptJSONL(t *testing.T) {
 	dir := t.TempDir()
 	mustWriteTiny(t, dir)

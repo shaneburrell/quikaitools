@@ -70,17 +70,11 @@ func RunLoRA(opt LoRAOptions) (losses []float32, err error) {
 			return nil, err
 		}
 		for _, p := range pairs {
-			pIDs := tok.Encode(p.Prompt)
-			cIDs := tok.Encode(p.Completion)
-			concat := append(append([]int{}, pIDs...), cIDs...)
-			if len(concat) < 2 {
+			ids, mask := encodeMaskedSFT(tok, p.Prompt, p.Completion)
+			if len(ids) < 2 {
 				continue
 			}
-			mask := make([]bool, len(concat))
-			for i := len(pIDs); i < len(concat); i++ {
-				mask[i] = true
-			}
-			samples = append(samples, sftSample{ids: concat, mask: mask})
+			samples = append(samples, sftSample{ids: ids, mask: mask})
 		}
 		if len(samples) == 0 {
 			return nil, fmt.Errorf("train: need more tokens (got 0 masked samples) — use longer --data")
@@ -291,4 +285,49 @@ func RunLoRARandomOpts(text string, steps int, qlora bool) ([]float32, *peft.Mod
 		losses = append(losses, loss)
 	}
 	return losses, m, nil
+}
+
+// encodeMaskedSFT jointly encodes prompt+completion (same as MessagesToText)
+// and masks tokens that fall in the completion, including a token that straddles
+// the prompt/completion boundary.
+func encodeMaskedSFT(tok *gpt2.Tokenizer, prompt, completion string) ([]int, []bool) {
+	full := prompt + completion
+	ids := tok.Encode(full)
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	split := promptTokenCount(tok, ids, prompt, full)
+	if split < 0 {
+		split = 0
+	}
+	if split > len(ids) {
+		split = len(ids)
+	}
+	mask := make([]bool, len(ids))
+	for i := split; i < len(ids); i++ {
+		mask[i] = true
+	}
+	return ids, mask
+}
+
+func promptTokenCount(tok *gpt2.Tokenizer, ids []int, prompt, full string) int {
+	if tok.Decode(ids) == full {
+		split := 0
+		for n := 1; n <= len(ids); n++ {
+			if len(tok.Decode(ids[:n])) <= len(prompt) {
+				split = n
+				continue
+			}
+			break
+		}
+		return split
+	}
+	// Tiny/incomplete vocabs may not round-trip through Decode. Fall back to
+	// the common prefix of Encode(prompt) and the joint ids.
+	pIDs := tok.Encode(prompt)
+	n := 0
+	for n < len(pIDs) && n < len(ids) && pIDs[n] == ids[n] {
+		n++
+	}
+	return n
 }

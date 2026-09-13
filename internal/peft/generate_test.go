@@ -63,3 +63,21 @@ func TestBaseOnlyGenerate(t *testing.T) {
 		t.Fatal("base-only should have no adapters")
 	}
 }
+
+func TestGenerateEmptyPromptAndZeroPositions(t *testing.T) {
+	base := gpt2.NewRandom(gpt2.Config{NEmbd: 8, NHead: 2, NLayer: 1, NPositions: 16, VocabSize: 16, NInner: 16}, 7)
+	m := BaseOnly(base)
+	out := m.Generate(nil, 4)
+	if len(out) != 5 {
+		t.Fatalf("empty prompt len=%d want 5 (seed + 4)", len(out))
+	}
+	sampled := m.Sample(nil, 3, SampleOptions{Seed: 1, EOS: -1})
+	if len(sampled) != 4 {
+		t.Fatalf("empty sample len=%d want 4", len(sampled))
+	}
+	base.Cfg.NPositions = 0
+	out = m.Generate([]int{1, 2}, 2)
+	if len(out) != 4 {
+		t.Fatalf("n_positions=0 len=%d want 4", len(out))
+	}
+}

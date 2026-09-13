@@ -2,4 +2,6 @@ module github.com/shaneburrell/quikaitools
 
 go 1.27
 
-require gopkg.in/yaml.v3 v3.0.1
+toolchain go1.27.1
+
+require go.yaml.in/yaml/v3 v3.0.5

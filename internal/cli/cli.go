@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -22,7 +23,7 @@ import (
 	"github.com/shaneburrell/quikaitools/internal/zoo"
 )
 
-const Version = "0.5.0"
+const Version = "0.5.1"
 
 func outf(w io.Writer, format string, a ...any) {
 	_, _ = fmt.Fprintf(w, format, a...)
@@ -137,6 +138,22 @@ func noteStubEngine(stderr io.Writer, engine string) {
 	if strings.Contains(engine, "stub") {
 		outf(stderr, "note: %s is a stub; ONNX runtime not linked\n", engine)
 	}
+}
+
+func adapterRank(dir string) int {
+	raw, err := os.ReadFile(filepath.Join(dir, "adapter.json"))
+	if err != nil {
+		return 0
+	}
+	var file struct {
+		LoRA struct {
+			Rank int `json:"rank"`
+		} `json:"lora"`
+	}
+	if json.Unmarshal(raw, &file) != nil {
+		return 0
+	}
+	return file.LoRA.Rank
 }
 
 func doctorUsage() string {
@@ -409,7 +426,7 @@ func cmdTrain(args []string, stdout, stderr io.Writer) int {
 		outf(stderr, "unknown train recipe %q (want lora|qlora)\n", recipe)
 		return 2
 	}
-	opt := train.LoRAOptions{Steps: 30, SeqLen: 32, Rank: 4, Alpha: 8, LR: 3e-3, Accum: 1, CkptEvery: 10, QLoRA: recipe == "qlora"}
+	opt := train.LoRAOptions{Steps: 30, SeqLen: 32, Alpha: 8, Accum: 1, CkptEvery: 10, QLoRA: recipe == "qlora"}
 	smoke := false
 	for i := 1; i < len(args); i++ {
 		switch args[i] {
@@ -531,6 +548,14 @@ func cmdTrain(args []string, stdout, stderr io.Writer) int {
 		opt.SeqLen = 32
 		opt.Accum = 4
 	}
+	if opt.Resume == "" {
+		if opt.Rank == 0 {
+			opt.Rank = 4
+		}
+		if opt.LR == 0 {
+			opt.LR = 3e-3
+		}
+	}
 	if opt.ModelDir == "" || opt.DataPath == "" {
 		outln(stderr, "train requires --model and --data")
 		return 2
@@ -547,7 +572,11 @@ func cmdTrain(args []string, stdout, stderr io.Writer) int {
 		outln(stderr, err)
 		return 1
 	}
-	outf(stdout, "%s steps=%d optimizer_steps=%d rank=%d accum=%d done\n", recipe, opt.Steps, len(losses), opt.Rank, opt.Accum)
+	rank := opt.Rank
+	if rank == 0 {
+		rank = adapterRank(opt.OutDir)
+	}
+	outf(stdout, "%s steps=%d optimizer_steps=%d rank=%d accum=%d done\n", recipe, opt.Steps, len(losses), rank, opt.Accum)
 	if len(losses) > 0 {
 		outf(stdout, "loss_first=%.4f loss_last=%.4f\n", losses[0], losses[len(losses)-1])
 	}

@@ -33,3 +33,21 @@ func TestMergeIntoBase(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestMergeQLoRAMatchesQuantForward(t *testing.T) {
+	cfg := gpt2.Config{NEmbd: 16, NHead: 4, NLayer: 2, NPositions: 32, VocabSize: 32, LayerNormEps: 1e-5, NInner: 32}
+	base := gpt2.NewRandom(cfg, 2)
+	m := peft.Wrap(base, peft.Config{Rank: 2, Alpha: 4, LR: 1e-2})
+	for i := range m.Attn[0].B {
+		m.Attn[0].B[i] = 0.01
+	}
+	m.EnableQLoRA()
+	toks := []int{1, 2, 3, 4}
+	want := append([]float32(nil), m.ForwardLogits(toks)...)
+	m.MergeIntoBase()
+	if m.IsQLoRA() {
+		t.Fatal("merge should disable QLoRA packing")
+	}
+	got := peft.BaseOnly(base).ForwardLogits(toks)
+	logitsClose(t, got, want)
+}

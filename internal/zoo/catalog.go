@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // Status is per-machine readiness in the catalog.
@@ -271,9 +271,9 @@ func FilesForModel(m Model) []string {
 		add("onnx/model.onnx")
 		add("model.onnx")
 	}
-	if fmts["gguf"] {
-		add("README.md")
-	}
+	// GGUF-only catalogs have no default filename (Hub repos name files
+	// differently). Returning nil uses hub.DefaultFiles, which requires
+	// real weights instead of treating README.md as a successful pull.
 	if len(files) == 0 {
 		return nil // hub default
 	}

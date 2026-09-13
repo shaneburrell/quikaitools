@@ -88,6 +88,18 @@ func TestPretokenize(t *testing.T) {
 	}
 }
 
+func TestPretokenizePromptCompletionBoundary(t *testing.T) {
+	prompt := "sys\n\nhello\n\n"
+	completion := "world"
+	joint := pretokenize(prompt + completion)
+	var split []string
+	split = append(split, pretokenize(prompt)...)
+	split = append(split, pretokenize(completion)...)
+	if reflect.DeepEqual(joint, split) {
+		t.Fatalf("expected pretok of prompt+completion to differ from concat, joint=%q split=%q", joint, split)
+	}
+}
+
 func containsToken(toks []string, want string) bool {
 	for _, t := range toks {
 		if t == want {

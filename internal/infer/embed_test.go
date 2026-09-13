@@ -56,26 +56,18 @@ func TestEmbedTextBagWTE(t *testing.T) {
 }
 
 func TestEmbedTextOOV(t *testing.T) {
-	cfg := gpt2.Config{NEmbd: 8, NHead: 2, NLayer: 1, NPositions: 16, VocabSize: 32, LayerNormEps: 1e-5}
+	cfg := gpt2.Config{NEmbd: 8, NHead: 2, NLayer: 1, NPositions: 16, VocabSize: 2, LayerNormEps: 1e-5}
 	m := gpt2.NewRandom(cfg, 1)
 	dir := t.TempDir()
 	if err := gpt2.WriteDir(dir, m); err != nil {
 		t.Fatal(err)
 	}
-	raw, err := os.ReadFile(filepath.Join(dir, "config.json"))
+	vocab := map[string]int{"<|endoftext|>": 0, "a": 1, "h": 8, "e": 5, "l": 12, "o": 15}
+	b, err := json.Marshal(vocab)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var obj map[string]any
-	if err := json.Unmarshal(raw, &obj); err != nil {
-		t.Fatal(err)
-	}
-	obj["vocab_size"] = 2
-	b, err := json.Marshal(obj)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "config.json"), b, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "vocab.json"), b, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	_, _, err = EmbedText(EmbedTextOptions{ModelDir: dir, Text: "hello"})

@@ -138,7 +138,7 @@ func dtypeBytes(dt string) int {
 
 func numel(shape []int) (int, error) {
 	if len(shape) == 0 {
-		return 0, nil
+		return 1, nil
 	}
 	n := 1
 	for _, d := range shape {

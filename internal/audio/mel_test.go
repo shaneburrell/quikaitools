@@ -78,6 +78,27 @@ func TestLogMelWhisperWrongRate(t *testing.T) {
 	}
 }
 
+func TestLogMelWhisperEmpty(t *testing.T) {
+	if _, err := LogMelWhisper(nil, 16000, 80); err == nil {
+		t.Fatal("expected error for empty samples")
+	}
+	if _, err := LogMelWhisper([]float32{}, 16000, 80); err == nil {
+		t.Fatal("expected error for empty samples")
+	}
+}
+
+func TestLoadWAVZeroRate(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "zero.wav")
+	if err := writeWAVWithRate(path, 0, 16); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := LoadWAVMono16(path)
+	if err == nil || !strings.Contains(err.Error(), "sample rate") {
+		t.Fatalf("want sample rate error, got %v", err)
+	}
+}
+
 func TestSlaneyFilterbankTriangles(t *testing.T) {
 	fb := slaneyMelFilterbank(80, 400, 16000, 0, 8000)
 	if len(fb) != 80 {
@@ -306,6 +327,36 @@ func writeFloat32WAV(path string, rate int, samples []float32) error {
 	for i, v := range samples {
 		binary.LittleEndian.PutUint32(buf[44+i*4:], math.Float32bits(v))
 	}
+	return os.WriteFile(path, buf, 0o644)
+}
+
+func writeWAVWithRate(path string, rate uint32, samples int) error {
+	if samples <= 0 {
+		samples = 1
+	}
+	dataBytes := samples * 2
+	riff, err := intToUint32(36 + dataBytes)
+	if err != nil {
+		return err
+	}
+	udata, err := intToUint32(dataBytes)
+	if err != nil {
+		return err
+	}
+	buf := make([]byte, 44+dataBytes)
+	copy(buf[0:4], "RIFF")
+	binary.LittleEndian.PutUint32(buf[4:8], riff)
+	copy(buf[8:12], "WAVE")
+	copy(buf[12:16], "fmt ")
+	binary.LittleEndian.PutUint32(buf[16:20], 16)
+	binary.LittleEndian.PutUint16(buf[20:22], 1)
+	binary.LittleEndian.PutUint16(buf[22:24], 1)
+	binary.LittleEndian.PutUint32(buf[24:28], rate)
+	binary.LittleEndian.PutUint32(buf[28:32], rate*2)
+	binary.LittleEndian.PutUint16(buf[32:34], 2)
+	binary.LittleEndian.PutUint16(buf[34:36], 16)
+	copy(buf[36:40], "data")
+	binary.LittleEndian.PutUint32(buf[40:44], udata)
 	return os.WriteFile(path, buf, 0o644)
 }
 

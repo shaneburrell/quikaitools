@@ -64,6 +64,9 @@ func LoadWAVMono16(path string) (samples []float32, rate int, err error) {
 			if err != nil {
 				return nil, 0, err
 			}
+			if rate <= 0 {
+				return nil, 0, fmt.Errorf("audio: invalid sample rate %d", rate)
+			}
 			return samples, rate, nil
 		}
 		i += sz
@@ -232,6 +235,9 @@ func LogMelWhisper(samples []float32, sampleRate int, nMels int) (Mel, error) {
 	}
 	if nMels <= 0 {
 		nMels = 80
+	}
+	if len(samples) == 0 {
+		return Mel{}, fmt.Errorf("audio: LogMelWhisper needs samples")
 	}
 	nFFT := whisperNFFT
 	hop := whisperHop

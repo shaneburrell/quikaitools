@@ -118,6 +118,7 @@ func loadHFPEFT(base *gpt2.Model, dir string) (*Model, error) {
 	if err != nil {
 		return nil, err
 	}
+	applied := 0
 	for name, t := range tensors {
 		layer, module, which, ok := parsePEFTKey(name)
 		if !ok {
@@ -141,6 +142,10 @@ func loadHFPEFT(base *gpt2.Model, dir string) (*Model, error) {
 		if err := copyPEFTMatrix(a, which, t); err != nil {
 			return nil, fmt.Errorf("peft: %s: %w", name, err)
 		}
+		applied++
+	}
+	if applied == 0 {
+		return nil, fmt.Errorf("peft: no GPT-2 LoRA tensors in %s", dir)
 	}
 	if qlora {
 		m.EnableQLoRA()
@@ -303,15 +308,17 @@ func (m *Model) Generate(prompt []int, maxNew int) []int {
 		maxNew = 16
 	}
 	out := append([]int(nil), prompt...)
+	if len(out) == 0 {
+		out = []int{0}
+	}
 	cfg := m.Base.Cfg
 	for n := 0; n < maxNew; n++ {
-		ctx := out
-		if len(ctx) > cfg.NPositions {
-			ctx = ctx[len(ctx)-cfg.NPositions:]
-		}
+		ctx := clipContext(out, cfg.NPositions)
 		logits := m.ForwardLogits(ctx)
-		t := len(ctx)
-		row := logits[(t-1)*cfg.VocabSize : t*cfg.VocabSize]
+		row := lastTokenLogits(logits, len(ctx), cfg.VocabSize)
+		if len(row) == 0 {
+			break
+		}
 		out = append(out, argmax(row))
 	}
 	return out
@@ -335,16 +342,18 @@ func (m *Model) Sample(prompt []int, maxNew int, o SampleOptions) []int {
 		maxNew = 16
 	}
 	out := append([]int(nil), prompt...)
+	if len(out) == 0 {
+		out = []int{0}
+	}
 	cfg := m.Base.Cfg
 	rng := rand.New(rand.NewPCG(uint64(o.Seed), uint64(o.Seed)^0x9e3779b97f4a7c15)) //nolint:gosec // G404: deterministic sampling, not crypto
 	for n := 0; n < maxNew; n++ {
-		ctx := out
-		if len(ctx) > cfg.NPositions {
-			ctx = ctx[len(ctx)-cfg.NPositions:]
-		}
+		ctx := clipContext(out, cfg.NPositions)
 		logits := m.ForwardLogits(ctx)
-		t := len(ctx)
-		row := logits[(t-1)*cfg.VocabSize : t*cfg.VocabSize]
+		row := lastTokenLogits(logits, len(ctx), cfg.VocabSize)
+		if len(row) == 0 {
+			break
+		}
 		tok := sampleToken(row, o, rng)
 		out = append(out, tok)
 		if o.EOS >= 0 && tok == o.EOS {
@@ -352,6 +361,26 @@ func (m *Model) Sample(prompt []int, maxNew int, o SampleOptions) []int {
 		}
 	}
 	return out
+}
+
+// clipContext keeps the last npos tokens. npos <= 0 means no limit, matching ForwardLogits.
+func clipContext(ctx []int, npos int) []int {
+	if npos > 0 && len(ctx) > npos {
+		return ctx[len(ctx)-npos:]
+	}
+	return ctx
+}
+
+func lastTokenLogits(logits []float32, t, vocab int) []float32 {
+	if t <= 0 || vocab <= 0 {
+		return nil
+	}
+	start := (t - 1) * vocab
+	end := t * vocab
+	if start < 0 || end > len(logits) {
+		return nil
+	}
+	return logits[start:end]
 }
 
 func argmax(row []float32) int {

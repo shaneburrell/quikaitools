@@ -227,3 +227,22 @@ func TestNewEnvCompatibility(t *testing.T) {
 		t.Fatalf("explicit cache: %q", c.Cache)
 	}
 }
+
+func TestPullONNXRequiresWeight(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, ".onnx") {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+	c := New(t.TempDir())
+	c.Base = srv.URL
+	c.HTTP = srv.Client()
+	c.Backoff = 0
+	_, err := c.Pull("org/onnx", []string{"config.json", "onnx/model.onnx", "model.onnx", "README.md"})
+	if err == nil || !strings.Contains(err.Error(), "no model weights") {
+		t.Fatalf("want weight error, got %v", err)
+	}
+}
